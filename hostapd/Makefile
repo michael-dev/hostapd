@@ -221,6 +221,10 @@ NEED_LINUX_IOCTL=y
 CONFIG_LINUX_NETLINK=y
 endif
 endif
+ifdef CONFIG_MACVLAN
+CFLAGS += -DCONFIG_MACVLAN
+OBJS += ../src/ap/macvlan.o
+endif
 endif
 
 ifdef CONFIG_NO_CTRL_IFACE

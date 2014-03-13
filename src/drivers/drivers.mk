@@ -30,6 +30,11 @@ ifdef NEED_DRV_WIRED_COMMON
 DRV_OBJS += src/drivers/driver_wired_common.c
 endif
 
+ifdef CONFIG_DRIVER_WIREDNG
+DRV_CFLAGS += -DCONFIG_DRIVER_WIREDNG
+DRV_OBJS += src/drivers/driver_wiredng.c
+endif
+
 ifdef CONFIG_DRIVER_NL80211
 DRV_CFLAGS += -DCONFIG_DRIVER_NL80211
 DRV_OBJS += src/drivers/driver_nl80211.c

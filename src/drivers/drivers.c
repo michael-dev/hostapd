@@ -10,7 +10,6 @@
 #include "utils/common.h"
 #include "driver.h"
 
-
 const struct wpa_driver_ops *const wpa_drivers[] =
 {
 #ifdef CONFIG_DRIVER_NL80211
@@ -34,6 +33,9 @@ const struct wpa_driver_ops *const wpa_drivers[] =
 #ifdef CONFIG_DRIVER_WIRED
 	&wpa_driver_wired_ops,
 #endif /* CONFIG_DRIVER_WIRED */
+#ifdef CONFIG_DRIVER_WIREDNG
+	&wpa_driver_wiredng_ops,
+#endif /* CONFIG_DRIVER_WIREDNG */
 #ifdef CONFIG_DRIVER_MACSEC_LINUX
 	&wpa_driver_macsec_linux_ops,
 #endif /* CONFIG_DRIVER_MACSEC_LINUX */
