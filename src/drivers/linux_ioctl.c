@@ -219,3 +219,27 @@ int linux_br_get(char *brname, const char *ifname)
 	os_strlcpy(brname, pos, IFNAMSIZ);
 	return 0;
 }
+
+int linux_ifname2idx(const char *ifname)
+{
+	struct ifreq ifr;
+	static int sock;
+
+	if (!sock)
+		sock = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_PAE));
+	if (sock < 0) {
+		perror("socket[PF_PACKET,SOCK_RAW]");
+		sock = 0;
+		return -1;
+	}
+
+	os_memset(&ifr, 0, sizeof(ifr));
+	os_strlcpy(ifr.ifr_name, ifname, sizeof(ifr.ifr_name));
+	if (ioctl(sock, SIOCGIFINDEX, &ifr) != 0) {
+		perror("ioctl(SIOCGIFINDEX)");
+		return -1;
+	}
+
+	return ifr.ifr_ifindex;
+}
+

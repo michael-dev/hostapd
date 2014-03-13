@@ -15,6 +15,14 @@ CONFIG_DRIVER_HOSTAP=y
 # Driver interface for wired authenticator
 #CONFIG_DRIVER_WIRED=y
 
+# Driver interface for wired authenticator with vlan support
+#CONFIG_DRIVER_WIREDNG=y
+#CONFIG_MACVLAN=y
+
+# Driver interface for madwifi driver
+#CONFIG_DRIVER_MADWIFI=y
+#CFLAGS += -I../../madwifi # change to the madwifi source directory
+
 # Driver interface for drivers using the nl80211 kernel interface
 CONFIG_DRIVER_NL80211=y
 

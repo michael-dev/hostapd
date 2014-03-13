@@ -179,6 +179,10 @@ OBJS += ../src/ap/vlan_util.o
 endif
 CFLAGS += -DCONFIG_VLAN_NETLINK
 endif
+ifdef CONFIG_MACVLAN
+CFLAGS += -DCONFIG_MACVLAN
+OBJS += ../src/ap/macvlan.o
+endif
 endif
 
 ifdef CONFIG_NO_CTRL_IFACE
