@@ -33,8 +33,15 @@
 
 struct full_dynamic_vlan {
 	int s; /* socket on which to listen for new/removed interfaces. */
+	struct hapd_interfaces *interfaces;
 };
 
+static struct full_dynamic_vlan *full_dynamic_vlan = 0;
+
+struct vlan_handle_read_ifname_data {
+	char ifname[IFNAMSIZ + 1];
+	int del;
+};
 
 static int ifconfig_helper(const char *if_name, int up)
 {
@@ -611,15 +618,31 @@ static void vlan_dellink(char *ifname, struct hostapd_data *hapd)
 	}
 }
 
+static int vlan_handle_read_ifname(struct hostapd_iface *iface, void *ctx)
+{
+        struct vlan_handle_read_ifname_data *data = ctx;
+        struct hostapd_data *hapd;
+        size_t j;
+
+        for (j = 0; j < iface->num_bss; j++) {
+                hapd = iface->bss[j];
+		if (data->del)
+			vlan_dellink(data->ifname, hapd);
+		else
+			vlan_newlink(data->ifname, hapd);
+        }
+
+	return 0;
+}
 
 static void
-vlan_read_ifnames(struct nlmsghdr *h, size_t len, int del,
-		  struct hostapd_data *hapd)
+vlan_read_ifnames(struct nlmsghdr *h, size_t len, int del)
 {
 	struct ifinfomsg *ifi;
 	int attrlen, nlmsg_len, rta_len;
 	struct rtattr *attr;
-	char ifname[IFNAMSIZ + 1];
+	struct vlan_handle_read_ifname_data data;
+	data.del = del;
 
 	if (len < sizeof(*ifi))
 		return;
@@ -642,36 +665,29 @@ vlan_read_ifnames(struct nlmsghdr *h, size_t len, int del,
 			if (n < 0)
 				break;
 
-			if ((size_t) n >= sizeof(ifname))
-				n = sizeof(ifname) - 1;
-			os_memcpy(ifname, ((char *) attr) + rta_len, n);
+			if ((size_t) n > sizeof(data.ifname))
+				n = sizeof(data.ifname);
+			os_strlcpy(data.ifname, ((char *) attr) + rta_len, n);
 
+			if (!full_dynamic_vlan ||
+			    !full_dynamic_vlan->interfaces ||
+			    !full_dynamic_vlan->interfaces->for_each_interface)
+			    goto skip;
+			if (!data.ifname[0])
+			    goto skip;
+			if (data.del && if_nametoindex(data.ifname))
+			    /* interface still exists, race condition ->
+			     * iface has just been recreated */
+			    goto skip;
+			full_dynamic_vlan->interfaces->for_each_interface(
+			    full_dynamic_vlan->interfaces,
+			    vlan_handle_read_ifname,
+			    &data);
+skip:
 		}
 
 		attr = RTA_NEXT(attr, attrlen);
 	}
-
-	if (!ifname[0])
-		return;
-	if (del && if_nametoindex(ifname)) {
-		 /* interface still exists, race condition ->
-		  * iface has just been recreated */
-		return;
-	}
-
-	wpa_printf(MSG_DEBUG,
-		   "VLAN: RTM_%sLINK: ifi_index=%d ifname=%s ifi_family=%d ifi_flags=0x%x (%s%s%s%s)",
-		   del ? "DEL" : "NEW",
-		   ifi->ifi_index, ifname, ifi->ifi_family, ifi->ifi_flags,
-		   (ifi->ifi_flags & IFF_UP) ? "[UP]" : "",
-		   (ifi->ifi_flags & IFF_RUNNING) ? "[RUNNING]" : "",
-		   (ifi->ifi_flags & IFF_LOWER_UP) ? "[LOWER_UP]" : "",
-		   (ifi->ifi_flags & IFF_DORMANT) ? "[DORMANT]" : "");
-
-	if (del)
-		vlan_dellink(ifname, hapd);
-	else
-		vlan_newlink(ifname, hapd);
 }
 
 
@@ -682,7 +698,6 @@ static void vlan_event_receive(int sock, void *eloop_ctx, void *sock_ctx)
 	struct sockaddr_nl from;
 	socklen_t fromlen;
 	struct nlmsghdr *h;
-	struct hostapd_data *hapd = eloop_ctx;
 
 	fromlen = sizeof(from);
 	left = recvfrom(sock, buf, sizeof(buf), MSG_DONTWAIT,
@@ -709,10 +724,10 @@ static void vlan_event_receive(int sock, void *eloop_ctx, void *sock_ctx)
 
 		switch (h->nlmsg_type) {
 		case RTM_NEWLINK:
-			vlan_read_ifnames(h, plen, 0, hapd);
+			vlan_read_ifnames(h, plen, 0);
 			break;
 		case RTM_DELLINK:
-			vlan_read_ifnames(h, plen, 1, hapd);
+			vlan_read_ifnames(h, plen, 1);
 			break;
 		}
 
@@ -727,7 +742,7 @@ static void vlan_event_receive(int sock, void *eloop_ctx, void *sock_ctx)
 
 
 static struct full_dynamic_vlan *
-full_dynamic_vlan_init(struct hostapd_data *hapd)
+full_dynamic_vlan_init()
 {
 	struct sockaddr_nl local;
 	struct full_dynamic_vlan *priv;
@@ -735,13 +750,6 @@ full_dynamic_vlan_init(struct hostapd_data *hapd)
 	priv = os_zalloc(sizeof(*priv));
 	if (priv == NULL)
 		return NULL;
-
-#ifndef CONFIG_VLAN_NETLINK
-	vlan_set_name_type(hapd->conf->ssid.vlan_naming ==
-			   DYNAMIC_VLAN_NAMING_WITH_DEVICE ?
-			   VLAN_NAME_TYPE_RAW_PLUS_VID_NO_PAD :
-			   VLAN_NAME_TYPE_PLUS_VID_NO_PAD);
-#endif /* CONFIG_VLAN_NETLINK */
 
 	priv->s = socket(PF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
 	if (priv->s < 0) {
@@ -763,7 +771,7 @@ full_dynamic_vlan_init(struct hostapd_data *hapd)
 		return NULL;
 	}
 
-	if (eloop_register_read_sock(priv->s, vlan_event_receive, hapd, NULL))
+	if (eloop_register_read_sock(priv->s, vlan_event_receive, NULL, NULL))
 	{
 		close(priv->s);
 		os_free(priv);
@@ -781,6 +789,22 @@ static void full_dynamic_vlan_deinit(struct full_dynamic_vlan *priv)
 	eloop_unregister_read_sock(priv->s);
 	close(priv->s);
 	os_free(priv);
+}
+
+
+int vlan_global_init(struct hapd_interfaces *interfaces)
+{
+	full_dynamic_vlan = full_dynamic_vlan_init();
+	if (!full_dynamic_vlan)
+		return -1;
+	full_dynamic_vlan->interfaces = interfaces;
+	return 0;
+}
+
+void vlan_global_deinit()
+{
+	full_dynamic_vlan_deinit(full_dynamic_vlan);
+	full_dynamic_vlan = NULL;
 }
 #endif /* CONFIG_FULL_DYNAMIC_VLAN */
 
@@ -864,7 +888,12 @@ static void vlan_dynamic_remove(struct hostapd_data *hapd,
 int vlan_init(struct hostapd_data *hapd)
 {
 #ifdef CONFIG_FULL_DYNAMIC_VLAN
-	hapd->full_dynamic_vlan = full_dynamic_vlan_init(hapd);
+#ifndef CONFIG_VLAN_NETLINK
+	vlan_set_name_type(hapd->conf->ssid.vlan_naming ==
+			   DYNAMIC_VLAN_NAMING_WITH_DEVICE ?
+			   VLAN_NAME_TYPE_RAW_PLUS_VID_NO_PAD :
+			   VLAN_NAME_TYPE_PLUS_VID_NO_PAD);
+#endif /* CONFIG_VLAN_NETLINK */
 #endif /* CONFIG_FULL_DYNAMIC_VLAN */
 
 	if (hapd->conf->ssid.dynamic_vlan != DYNAMIC_VLAN_DISABLED &&
@@ -895,11 +924,6 @@ int vlan_init(struct hostapd_data *hapd)
 void vlan_deinit(struct hostapd_data *hapd)
 {
 	vlan_dynamic_remove(hapd, hapd->conf->vlan);
-
-#ifdef CONFIG_FULL_DYNAMIC_VLAN
-	full_dynamic_vlan_deinit(hapd->full_dynamic_vlan);
-	hapd->full_dynamic_vlan = NULL;
-#endif /* CONFIG_FULL_DYNAMIC_VLAN */
 }
 
 
