@@ -31,7 +31,6 @@ struct upnp_wps_device_sm;
 struct hostapd_data;
 struct sta_info;
 struct ieee80211_ht_capabilities;
-struct full_dynamic_vlan;
 enum wps_event;
 union wps_event_data;
 #ifdef CONFIG_MESH
@@ -213,10 +212,6 @@ struct hostapd_data {
 	/* Time Advertisement */
 	u8 time_update_counter;
 	struct wpabuf *time_adv;
-
-#ifdef CONFIG_FULL_DYNAMIC_VLAN
-	struct full_dynamic_vlan *full_dynamic_vlan;
-#endif /* CONFIG_FULL_DYNAMIC_VLAN */
 
 	struct l2_packet_data *l2;
 
