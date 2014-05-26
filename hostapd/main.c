@@ -30,6 +30,7 @@
 #include "config_file.h"
 #include "eap_register.h"
 #include "ctrl_iface.h"
+#include "ap/vlan_init.h"
 
 
 struct hapd_global {
@@ -376,6 +377,9 @@ static int hostapd_global_init(struct hapd_interfaces *interfaces,
 	if (global.drv_priv == NULL)
 		return -1;
 
+	if (vlan_global_init(interfaces))
+		return -1;
+
 	return 0;
 }
 
@@ -383,6 +387,8 @@ static int hostapd_global_init(struct hapd_interfaces *interfaces,
 static void hostapd_global_deinit(const char *pid_file, int eloop_initialized)
 {
 	int i;
+
+	vlan_global_deinit();
 
 	for (i = 0; wpa_drivers[i] && global.drv_priv; i++) {
 		if (!global.drv_priv[i])

@@ -130,7 +130,7 @@ static void vlan_dynamic_remove(struct hostapd_data *hapd,
 int vlan_init(struct hostapd_data *hapd)
 {
 #ifdef CONFIG_FULL_DYNAMIC_VLAN
-	hapd->full_dynamic_vlan = full_dynamic_vlan_init(hapd);
+	full_dynamic_vlan_init(hapd);
 #endif /* CONFIG_FULL_DYNAMIC_VLAN */
 
 	if ((hapd->conf->ssid.dynamic_vlan != DYNAMIC_VLAN_DISABLED ||
@@ -171,12 +171,10 @@ int vlan_init(struct hostapd_data *hapd)
 
 void vlan_deinit(struct hostapd_data *hapd)
 {
-	vlan_dynamic_remove(hapd, hapd->conf->vlan);
-
 #ifdef CONFIG_FULL_DYNAMIC_VLAN
-	full_dynamic_vlan_deinit(hapd->full_dynamic_vlan);
-	hapd->full_dynamic_vlan = NULL;
+	full_dynamic_vlan_deinit(hapd);
 #endif /* CONFIG_FULL_DYNAMIC_VLAN */
+	vlan_dynamic_remove(hapd, hapd->conf->vlan);
 }
 
 
