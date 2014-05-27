@@ -187,6 +187,7 @@ ifdef CONFIG_FULL_DYNAMIC_VLAN
 # and VLAN interfaces for the VLAN feature.
 L_CFLAGS += -DCONFIG_FULL_DYNAMIC_VLAN
 OBJS += src/ap/vlan_full.c
+NEED_NETLINK=y
 ifdef CONFIG_VLAN_NETLINK
 OBJS += src/ap/vlan_util.c
 else

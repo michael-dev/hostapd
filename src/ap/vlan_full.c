@@ -15,6 +15,7 @@
 #include <sys/ioctl.h>
 
 #include "utils/common.h"
+#include "drivers/netlink.h"
 #include "drivers/priv_netlink.h"
 #include "drivers/linux_ioctl.h"
 #include "common/linux_bridge.h"
@@ -29,7 +30,7 @@
 
 
 struct full_dynamic_vlan {
-	int s; /* socket on which to listen for new/removed interfaces. */
+	struct netlink_data * nl; /* listens for NEWLINK and DELLINK */
 	struct hapd_interfaces *interfaces;
 };
 
@@ -657,45 +658,26 @@ static int vlan_handle_read_ifname(struct hostapd_iface *iface, void *ctx)
 }
  
 static void
-vlan_read_ifnames(struct nlmsghdr *h, size_t len, int del)
+vlan_event_receive(void *ctx, struct ifinfomsg *ifi, struct rtattr *attr,
+		   size_t attrlen, int del)
 {
-	struct ifinfomsg *ifi;
-	int attrlen, nlmsg_len, rta_len;
-	struct rtattr *attr;
 	struct vlan_handle_read_ifname_data data;
 	data.del = del;
+	data.ifname[0] = '\0';
 
 	if (!priv ||
 	    !priv->interfaces ||
 	    !priv->interfaces->for_each_interface)
 		return;
 
-	if (len < sizeof(*ifi))
-		return;
-
-	ifi = NLMSG_DATA(h);
-
-	nlmsg_len = NLMSG_ALIGN(sizeof(struct ifinfomsg));
-
-	attrlen = h->nlmsg_len - nlmsg_len;
-	if (attrlen < 0)
-		return;
-
-	attr = (struct rtattr *) (((char *) ifi) + nlmsg_len);
-
-	os_memset(data.ifname, 0, sizeof(data.ifname));
-	rta_len = RTA_ALIGN(sizeof(struct rtattr));
 	while (RTA_OK(attr, attrlen)) {
 		if (attr->rta_type == IFLA_IFNAME) {
-			int n = attr->rta_len - rta_len;
-			if (n < 0)
+			size_t n = RTA_PAYLOAD(attr);
+			if (n > sizeof(data.ifname))
 				break;
-
-			if ((size_t) n > sizeof(data.ifname))
-				n = sizeof(data.ifname);
-			os_strlcpy(data.ifname, ((char *) attr) + rta_len, n);
+			os_strlcpy(data.ifname, RTA_DATA(attr), n);
+			break;
 		}
-
 		attr = RTA_NEXT(attr, attrlen);
 	}
 
@@ -712,53 +694,17 @@ vlan_read_ifnames(struct nlmsghdr *h, size_t len, int del)
 }
 
 
-static void vlan_event_receive(int sock, void *eloop_ctx, void *sock_ctx)
+static void
+vlan_event_receive_newlink(void *ctx, struct ifinfomsg *ifi, u8 *buf, size_t len)
 {
-	char buf[8192];
-	int left;
-	struct sockaddr_nl from;
-	socklen_t fromlen;
-	struct nlmsghdr *h;
+	vlan_event_receive(ctx, ifi, (struct rtattr *) buf, len, 0);
+}
 
-	fromlen = sizeof(from);
-	left = recvfrom(sock, buf, sizeof(buf), MSG_DONTWAIT,
-			(struct sockaddr *) &from, &fromlen);
-	if (left < 0) {
-		if (errno != EINTR && errno != EAGAIN)
-			wpa_printf(MSG_ERROR, "VLAN: %s: recvfrom failed: %s",
-				   __func__, strerror(errno));
-		return;
-	}
 
-	h = (struct nlmsghdr *) buf;
-	while (NLMSG_OK(h, left)) {
-		int len, plen;
-
-		len = h->nlmsg_len;
-		plen = len - sizeof(*h);
-		if (len > left || plen < 0) {
-			wpa_printf(MSG_DEBUG, "VLAN: Malformed netlink "
-				   "message: len=%d left=%d plen=%d",
-				   len, left, plen);
-			break;
-		}
-
-		switch (h->nlmsg_type) {
-		case RTM_NEWLINK:
-			vlan_read_ifnames(h, plen, 0);
-			break;
-		case RTM_DELLINK:
-			vlan_read_ifnames(h, plen, 1);
-			break;
-		}
-
-		h = NLMSG_NEXT(h, left);
-	}
-
-	if (left > 0) {
-		wpa_printf(MSG_DEBUG, "VLAN: %s: %d extra bytes in the end of "
-			   "netlink message", __func__, left);
-	}
+static void
+vlan_event_receive_dellink(void *ctx, struct ifinfomsg *ifi, u8 *buf, size_t len)
+{
+	vlan_event_receive(ctx, ifi, (struct rtattr *) buf, len, 1);
 }
 
 
@@ -773,43 +719,43 @@ void full_dynamic_vlan_init(struct hostapd_data *hapd)
 
 int vlan_global_init(struct hapd_interfaces *interfaces)
 {
-	struct sockaddr_nl local;
+	struct netlink_config *cfg = NULL;
+
+	cfg = os_zalloc(sizeof(*cfg));
+	if (cfg == NULL)
+		goto err;
+
+	cfg->ctx = NULL;
+	cfg->newlink_cb = vlan_event_receive_newlink;
+	cfg->dellink_cb = vlan_event_receive_dellink;
 
 	priv = os_zalloc(sizeof(*priv));
 	if (priv == NULL)
-		return -1;
-
-	priv->s = socket(PF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
-	if (priv->s < 0) {
-		wpa_printf(MSG_ERROR, "VLAN: %s: socket(PF_NETLINK,SOCK_RAW,"
-			   "NETLINK_ROUTE) failed: %s",
-			   __func__, strerror(errno));
-		os_free(priv);
-		return -1;
-	}
-
-	os_memset(&local, 0, sizeof(local));
-	local.nl_family = AF_NETLINK;
-	local.nl_groups = RTMGRP_LINK;
-	if (bind(priv->s, (struct sockaddr *) &local, sizeof(local)) < 0) {
-		wpa_printf(MSG_ERROR, "VLAN: %s: bind(netlink) failed: %s",
-			   __func__, strerror(errno));
-		close(priv->s);
-		os_free(priv);
-		return -1;
-	}
-
-	if (eloop_register_read_sock(priv->s, vlan_event_receive, NULL, NULL))
-	{
-		close(priv->s);
-		os_free(priv);
-		return -1;
-	}
+		goto err;
 
 	priv->interfaces = interfaces;
-	return 0;
-}
+	priv->nl = netlink_init(cfg);
+	if (priv->nl == NULL)
+	{
+		wpa_printf(MSG_ERROR, "VLAN: %s: netlink_init failed: %s",
+			   __func__, strerror(errno));
+		goto err;
+	}
 
+	return 0;
+err:
+	if (priv)
+	{
+		os_free(priv);
+		priv = NULL;
+	}
+	if (cfg)
+	{
+		os_free(cfg);
+		cfg = NULL;
+	}
+	return -1;
+}
 
 void full_dynamic_vlan_deinit(struct hostapd_data *hapd)
 {
@@ -820,8 +766,8 @@ void vlan_global_deinit()
 {
 	if (priv == NULL)
 		return;
-	eloop_unregister_read_sock(priv->s);
-	close(priv->s);
+	netlink_deinit(priv->nl);
 	os_free(priv);
 	priv = NULL;
 }
+
