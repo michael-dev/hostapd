@@ -12,13 +12,15 @@
 #include "eloop.h"
 #include "priv_netlink.h"
 #include "netlink.h"
-
+#include <assert.h>
 
 struct netlink_data {
 	struct netlink_config *cfg;
-	int sock;
+	struct netlink_data *next;
 };
 
+static int netlink_global_sock = -1;
+struct netlink_data *netlink_global_head = NULL;
 
 static void netlink_receive_link(struct netlink_data *netlink,
 				 void (*cb)(void *ctx, struct ifinfomsg *ifi,
@@ -35,7 +37,7 @@ static void netlink_receive_link(struct netlink_data *netlink,
 
 static void netlink_receive(int sock, void *eloop_ctx, void *sock_ctx)
 {
-	struct netlink_data *netlink = eloop_ctx;
+	struct netlink_data *netlink;
 	char buf[8192];
 	int left;
 	struct sockaddr_nl from;
@@ -58,12 +60,14 @@ try_again:
 	while (NLMSG_OK(h, left)) {
 		switch (h->nlmsg_type) {
 		case RTM_NEWLINK:
-			netlink_receive_link(netlink, netlink->cfg->newlink_cb,
-					     h);
+			for (netlink = netlink_global_head; netlink; netlink = netlink->next)
+				netlink_receive_link(netlink, netlink->cfg->newlink_cb,
+						     h);
 			break;
 		case RTM_DELLINK:
-			netlink_receive_link(netlink, netlink->cfg->dellink_cb,
-					     h);
+			for (netlink = netlink_global_head; netlink; netlink = netlink->next)
+				netlink_receive_link(netlink, netlink->cfg->dellink_cb,
+						     h);
 			break;
 		}
 
@@ -92,13 +96,24 @@ struct netlink_data * netlink_init(struct netlink_config *cfg)
 {
 	struct netlink_data *netlink;
 	struct sockaddr_nl local;
+	int sock;
 
 	netlink = os_zalloc(sizeof(*netlink));
 	if (netlink == NULL)
 		return NULL;
 
-	netlink->sock = socket(PF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
-	if (netlink->sock < 0) {
+	netlink->cfg = cfg;
+
+	/* add to linked list */
+	netlink->next = netlink_global_head;
+	netlink_global_head = netlink;
+
+	/* only open socket if required */
+	if (netlink_global_sock >= 0)
+		return netlink;
+
+	sock = socket(PF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
+	if (sock < 0) {
 		wpa_printf(MSG_ERROR, "netlink: Failed to open netlink "
 			   "socket: %s", strerror(errno));
 		netlink_deinit(netlink);
@@ -108,18 +123,17 @@ struct netlink_data * netlink_init(struct netlink_config *cfg)
 	os_memset(&local, 0, sizeof(local));
 	local.nl_family = AF_NETLINK;
 	local.nl_groups = RTMGRP_LINK;
-	if (bind(netlink->sock, (struct sockaddr *) &local, sizeof(local)) < 0)
+	if (bind(sock, (struct sockaddr *) &local, sizeof(local)) < 0)
 	{
 		wpa_printf(MSG_ERROR, "netlink: Failed to bind netlink "
 			   "socket: %s", strerror(errno));
 		netlink_deinit(netlink);
+		close(sock);
 		return NULL;
 	}
 
-	eloop_register_read_sock(netlink->sock, netlink_receive, netlink,
-				 NULL);
-
-	netlink->cfg = cfg;
+	netlink_global_sock = sock;
+	eloop_register_read_sock(netlink_global_sock, netlink_receive, NULL, NULL);
 
 	return netlink;
 }
@@ -127,14 +141,36 @@ struct netlink_data * netlink_init(struct netlink_config *cfg)
 
 void netlink_deinit(struct netlink_data *netlink)
 {
+	struct netlink_data *i, *prev = NULL;
 	if (netlink == NULL)
 		return;
-	if (netlink->sock >= 0) {
-		eloop_unregister_read_sock(netlink->sock);
-		close(netlink->sock);
+
+	for (i = netlink_global_head; i; i = i->next) {
+		if (i == netlink) {
+			if (prev) {
+				prev->next = i->next;
+			} else {
+				netlink_global_head = i->next;
+			}
+			os_free(netlink->cfg);
+			os_free(netlink);
+			netlink = NULL;
+			break;
+		}
+		prev = i;
 	}
-	os_free(netlink->cfg);
-	os_free(netlink);
+	if (!i && netlink) {
+		wpa_printf(MSG_ERROR, "netlink: Failed to find netlink "
+			   "pointer: %p", netlink);
+		os_free(netlink->cfg);
+		os_free(netlink);
+		netlink = NULL;
+	}
+	if (!netlink_global_head && netlink_global_sock >= 0) {
+		eloop_unregister_read_sock(netlink_global_sock);
+		close(netlink_global_sock);
+		netlink_global_sock = -1;
+	}
 }
 
 
@@ -178,6 +214,8 @@ int netlink_send_oper_ifla(struct netlink_data *netlink, int ifindex,
 	static int nl_seq;
 	ssize_t ret;
 
+	assert(netlink_global_sock >= 0);
+
 	os_memset(&req, 0, sizeof(req));
 
 	req.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(struct ifinfomsg));
@@ -215,7 +253,7 @@ int netlink_send_oper_ifla(struct netlink_data *netlink, int ifindex,
 		   ifindex, linkmode, linkmode_str(linkmode),
 		   operstate, operstate_str(operstate));
 
-	ret = send(netlink->sock, &req, req.hdr.nlmsg_len, 0);
+	ret = send(netlink_global_sock, &req, req.hdr.nlmsg_len, 0);
 	if (ret < 0) {
 		wpa_printf(MSG_DEBUG, "netlink: Sending operstate IFLA "
 			   "failed: %s (assume operstate is not supported)",
