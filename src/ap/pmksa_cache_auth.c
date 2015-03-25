@@ -146,7 +146,7 @@ static void pmksa_cache_from_eapol_data(struct rsn_pmksa_cache_entry *entry,
 #endif /* CONFIG_NO_RADIUS */
 
 	entry->eap_type_authsrv = eapol->eap_type_authsrv;
-	entry->vlan_id = ((struct sta_info *) eapol->sta)->vlan_id;
+	entry->vlan_id = ((struct sta_info *) eapol->sta)->vlan_desc;
 
 	entry->acct_multi_session_id_hi = eapol->acct_multi_session_id_hi;
 	entry->acct_multi_session_id_lo = eapol->acct_multi_session_id_lo;
@@ -156,6 +156,8 @@ static void pmksa_cache_from_eapol_data(struct rsn_pmksa_cache_entry *entry,
 void pmksa_cache_to_eapol_data(struct rsn_pmksa_cache_entry *entry,
 			       struct eapol_state_machine *eapol)
 {
+	struct sta_info *sta;
+
 	if (entry == NULL || eapol == NULL)
 		return;
 
@@ -186,7 +188,8 @@ void pmksa_cache_to_eapol_data(struct rsn_pmksa_cache_entry *entry,
 	}
 
 	eapol->eap_type_authsrv = entry->eap_type_authsrv;
-	((struct sta_info *) eapol->sta)->vlan_id = entry->vlan_id;
+	sta = (struct sta_info *) eapol->sta;
+	ap_sta_set_vlan(sta->bss, sta, entry->vlan_id);
 
 	eapol->acct_multi_session_id_hi = entry->acct_multi_session_id_hi;
 	eapol->acct_multi_session_id_lo = entry->acct_multi_session_id_lo;

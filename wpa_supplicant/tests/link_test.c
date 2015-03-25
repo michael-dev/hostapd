@@ -39,8 +39,7 @@ void ap_sta_session_timeout(struct hostapd_data *hapd, struct sta_info *sta,
 }
 
 
-int ap_sta_bind_vlan(struct hostapd_data *hapd, struct sta_info *sta,
-		     int old_vlanid)
+int ap_sta_bind_vlan(struct hostapd_data *hapd, struct sta_info *sta)
 {
 	return 0;
 }
