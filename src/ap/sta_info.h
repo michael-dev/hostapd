@@ -15,6 +15,7 @@
 #endif /* CONFIG_MESH */
 
 #include "list.h"
+#include "vlan.h"
 
 /* STA flags */
 #define WLAN_STA_AUTH BIT(0)
@@ -44,8 +45,10 @@
  * Supported Rates IEs). */
 #define WLAN_SUPP_RATES_MAX 32
 
+struct hostapd_data;
 
 struct sta_info {
+	struct hostapd_data *bss; /* required for set vlan in preauth */
 	struct sta_info *next; /* next entry in sta list */
 	struct sta_info *hnext; /* next entry in hash table list */
 	u8 addr[6];
@@ -118,6 +121,7 @@ struct sta_info {
 	struct rsn_preauth_interface *preauth_iface;
 
 	int vlan_id; /* 0: none, >0: VID */
+	struct vlan_description vlan_desc;
 	int vlan_id_bound; /* updated by ap_sta_bind_vlan() */
 	 /* PSKs from RADIUS authentication server */
 	struct hostapd_sta_wpa_psk_short *psk;
@@ -186,8 +190,6 @@ struct sta_info {
 #define AP_MAX_INACTIVITY_AFTER_DEAUTH (1 * 5)
 
 
-struct hostapd_data;
-
 int ap_for_each_sta(struct hostapd_data *hapd,
 		    int (*cb)(struct hostapd_data *hapd, struct sta_info *sta,
 			      void *ctx),
@@ -217,6 +219,8 @@ int ap_sta_wps_cancel(struct hostapd_data *hapd,
 		      struct sta_info *sta, void *ctx);
 #endif /* CONFIG_WPS */
 int ap_sta_bind_vlan(struct hostapd_data *hapd, struct sta_info *sta);
+int ap_sta_set_vlan(struct hostapd_data *hapd, struct sta_info *sta,
+		    struct vlan_description vlan_id);
 void ap_sta_start_sa_query(struct hostapd_data *hapd, struct sta_info *sta);
 void ap_sta_stop_sa_query(struct hostapd_data *hapd, struct sta_info *sta);
 int ap_check_sa_query_timeout(struct hostapd_data *hapd, struct sta_info *sta);

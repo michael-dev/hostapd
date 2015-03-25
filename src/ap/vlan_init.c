@@ -614,25 +614,26 @@ static void vlan_newlink(char *ifname, struct hostapd_data *hapd)
 	struct hostapd_vlan *vlan = hapd->conf->vlan;
 	char *tagged_interface = hapd->conf->ssid.vlan_tagged_interface;
 	int vlan_naming = hapd->conf->ssid.vlan_naming;
-	int clean;
+	int clean, untagged;
 
 	wpa_printf(MSG_DEBUG, "VLAN: vlan_newlink(%s)", ifname);
 
 	while (vlan) {
+		untagged = vlan->vlan_desc.untagged;
 		if (os_strcmp(ifname, vlan->ifname) == 0 && !vlan->configured) {
 			vlan->configured = 1;
 
 			if (hapd->conf->vlan_bridge[0]) {
 				os_snprintf(br_name, sizeof(br_name), "%s%d",
 					    hapd->conf->vlan_bridge,
-					    vlan->vlan_id);
+					    untagged);
 			} else if (tagged_interface) {
 				os_snprintf(br_name, sizeof(br_name),
 				            "br%s.%d", tagged_interface,
-					    vlan->vlan_id);
+					    untagged);
 			} else {
 				os_snprintf(br_name, sizeof(br_name),
-				            "brvlan%d", vlan->vlan_id);
+				            "brvlan%d", untagged);
 			}
 
 			if (!br_addbr(br_name))
@@ -648,15 +649,15 @@ static void vlan_newlink(char *ifname, struct hostapd_data *hapd)
 					os_snprintf(vlan_ifname,
 						    sizeof(vlan_ifname),
 						    "%s.%d", tagged_interface,
-						    vlan->vlan_id);
+						    untagged);
 				else
 					os_snprintf(vlan_ifname,
 						    sizeof(vlan_ifname),
-						    "vlan%d", vlan->vlan_id);
+						    "vlan%d", untagged);
 
 				clean = 0;
 				ifconfig_up(tagged_interface);
-				if (!vlan_add(tagged_interface, vlan->vlan_id,
+				if (!vlan_add(tagged_interface, untagged,
 					      vlan_ifname))
 					clean |= DVLAN_CLEAN_VLAN;
 
@@ -687,26 +688,27 @@ static void vlan_dellink(char *ifname, struct hostapd_data *hapd)
 	struct hostapd_vlan *first, *prev, *vlan = hapd->conf->vlan;
 	char *tagged_interface = hapd->conf->ssid.vlan_tagged_interface;
 	int vlan_naming = hapd->conf->ssid.vlan_naming;
-	int clean;
+	int clean, untagged;
 
 	wpa_printf(MSG_DEBUG, "VLAN: vlan_dellink(%s)", ifname);
 
 	first = prev = vlan;
 
 	while (vlan) {
+		untagged = vlan->vlan_desc.untagged;
 		if (os_strcmp(ifname, vlan->ifname) == 0 &&
 		    vlan->configured) {
 			if (hapd->conf->vlan_bridge[0]) {
 				os_snprintf(br_name, sizeof(br_name), "%s%d",
 					    hapd->conf->vlan_bridge,
-					    vlan->vlan_id);
+					    untagged);
 			} else if (tagged_interface) {
 				os_snprintf(br_name, sizeof(br_name),
 				            "br%s.%d", tagged_interface,
-					    vlan->vlan_id);
+					    untagged);
 			} else {
 				os_snprintf(br_name, sizeof(br_name),
-				            "brvlan%d", vlan->vlan_id);
+				            "brvlan%d", untagged);
 			}
 
 			if (vlan->clean & DVLAN_CLEAN_WLAN_PORT)
@@ -718,11 +720,11 @@ static void vlan_dellink(char *ifname, struct hostapd_data *hapd)
 					os_snprintf(vlan_ifname,
 						    sizeof(vlan_ifname),
 						    "%s.%d", tagged_interface,
-						    vlan->vlan_id);
+						    untagged);
 				else
 					os_snprintf(vlan_ifname,
 						    sizeof(vlan_ifname),
-						    "vlan%d", vlan->vlan_id);
+						    "vlan%d", untagged);
 
 				clean = dyn_iface_put(vlan_ifname, hapd);
 
@@ -1049,12 +1051,14 @@ void vlan_deinit(struct hostapd_data *hapd)
 
 struct hostapd_vlan * vlan_add_dynamic(struct hostapd_data *hapd,
 				       struct hostapd_vlan *vlan,
-				       int vlan_id)
+				       int vlan_id,
+				       struct vlan_description vlan_desc)
 {
 	struct hostapd_vlan *n = NULL;
 	char *ifname, *pos;
 
-	if (vlan == NULL || vlan_id <= 0 || vlan_id > MAX_VLAN_ID ||
+	if (vlan == NULL || vlan_desc.untagged <= 0 ||
+	    vlan_desc.untagged > MAX_VLAN_ID ||
 	    vlan->vlan_id != VLAN_ID_WILDCARD)
 		return NULL;
 
@@ -1073,6 +1077,7 @@ struct hostapd_vlan * vlan_add_dynamic(struct hostapd_data *hapd,
 		goto free_ifname;
 
 	n->vlan_id = vlan_id;
+	n->vlan_desc = vlan_desc;
 	n->dynamic_vlan = 1;
 
 	os_snprintf(n->ifname, sizeof(n->ifname), "%s%d%s", ifname, vlan_id,
@@ -1099,7 +1104,7 @@ int vlan_remove_dynamic(struct hostapd_data *hapd, int vlan_id)
 {
 	struct hostapd_vlan *vlan;
 
-	if (vlan_id <= 0 || vlan_id > MAX_VLAN_ID)
+	if (vlan_id <= 0)
 		return 1;
 
 	wpa_printf(MSG_DEBUG, "VLAN: %s(ifname=%s vlan_id=%d)",

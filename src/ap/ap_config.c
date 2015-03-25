@@ -602,7 +602,7 @@ void hostapd_config_free(struct hostapd_config *conf)
  * Perform a binary search for given MAC address from a pre-sorted list.
  */
 int hostapd_maclist_found(struct mac_acl_entry *list, int num_entries,
-			  const u8 *addr, int *vlan_id)
+			  const u8 *addr, struct vlan_description *vlan_id)
 {
 	int start, end, middle, res;
 
@@ -642,11 +642,17 @@ int hostapd_rate_found(int *list, int rate)
 }
 
 
-int hostapd_vlan_id_valid(struct hostapd_vlan *vlan, int vlan_id)
+int hostapd_vlan_id_valid(struct hostapd_vlan *vlan, struct vlan_description vlan_id)
 {
 	struct hostapd_vlan *v = vlan;
+
+	if (!vlan_id.notempty || vlan_id.untagged <= 0 ||
+	    vlan_id.untagged > MAX_VLAN_ID)
+		return 0;
+
 	while (v) {
-		if (v->vlan_id == vlan_id || v->vlan_id == VLAN_ID_WILDCARD)
+		if (!os_memcmp(&v->vlan_desc, &vlan_id, sizeof(vlan_id))
+		    || v->vlan_id == VLAN_ID_WILDCARD)
 			return 1;
 		v = v->next;
 	}
