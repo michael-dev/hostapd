@@ -1590,6 +1590,7 @@ ieee802_1x_receive_auth(struct radius_msg *msg, struct radius_msg *req,
 	int override_eapReq = 0;
 	struct radius_hdr *hdr = radius_msg_get_hdr(msg);
 	struct vlan_description vlan_desc;
+	int *untagged, *tagged, *notempty;
 
 	os_memset(&vlan_desc, 0, sizeof(vlan_desc));
 
@@ -1657,8 +1658,12 @@ ieee802_1x_receive_auth(struct radius_msg *msg, struct radius_msg *req,
 	case RADIUS_CODE_ACCESS_ACCEPT:
 #ifndef CONFIG_NO_VLAN
 		if (hapd->conf->ssid.dynamic_vlan != DYNAMIC_VLAN_DISABLED) {
-			vlan_desc.untagged = radius_msg_get_vlanid(msg);
-			vlan_desc.notempty = !!vlan_desc.untagged;
+			notempty = &vlan_desc.notempty;
+			untagged = &vlan_desc.untagged;
+			tagged = vlan_desc.tagged;
+			*notempty= !!radius_msg_get_vlanid(msg, untagged,
+							   MAX_NUM_TAGGED_VLAN,
+							   tagged);
 		}
 
 		if (vlan_desc.notempty &&
@@ -1667,8 +1672,10 @@ ieee802_1x_receive_auth(struct radius_msg *msg, struct radius_msg *req,
 			hostapd_logger(hapd, sta->addr,
 				       HOSTAPD_MODULE_RADIUS,
 				       HOSTAPD_LEVEL_INFO,
-				       "Invalid VLAN %d received from RADIUS server",
-				       vlan_desc.untagged);
+				       "Invalid VLAN %d%s received from "
+				       "RADIUS server",
+				       vlan_desc.untagged,
+				       vlan_desc.tagged[0] ? "+" : "");
 			os_memset(&vlan_desc, 0, sizeof(vlan_desc));
 			ap_sta_set_vlan(hapd, sta, vlan_desc);
 			break;

@@ -1421,13 +1421,28 @@ struct radius_tunnel_attrs {
 	int vlanid;
 };
 
+static int cmp_int(const void *a, const void *b)
+{
+	int x = *((int *) a);
+	int y = *((int *) b);
+	return x - y;
+}
 
 /**
  * radius_msg_get_vlanid - Parse RADIUS attributes for VLAN tunnel information
+ * The k tagged vlans found are sorted by vlan_id and stored in the first k
+ * items of tagged.
+ *
  * @msg: RADIUS message
- * Returns: VLAN ID for the first tunnel configuration or 0 if none is found
+ * @param untagged: pointer to store untagged vid
+ * @param numtagged: size of tagged
+ * @param tagged: pointer to store tagged list
+ *
+ * Returns: 0 if neither tagged nor untagged configuration is found
+ *          1 else
  */
-int radius_msg_get_vlanid(struct radius_msg *msg)
+int radius_msg_get_vlanid(struct radius_msg *msg, int* untagged, int numtagged,
+			  int *tagged)
 {
 	struct radius_tunnel_attrs tunnel[RADIUS_TUNNEL_TAGS], *tun;
 	size_t i;
@@ -1435,8 +1450,12 @@ int radius_msg_get_vlanid(struct radius_msg *msg)
 	const u8 *data;
 	char buf[10];
 	size_t dlen;
+	int taggedidx = 0, vlan_id;
 
 	os_memset(&tunnel, 0, sizeof(tunnel));
+	for (i = 0; i < numtagged; i++)
+		tagged[i] = 0;
+	*untagged = 0;
 
 	for (i = 0; i < msg->attr_used; i++) {
 		attr = radius_get_attr_hdr(msg, i);
@@ -1473,21 +1492,47 @@ int radius_msg_get_vlanid(struct radius_msg *msg)
 				break;
 			os_memcpy(buf, data, dlen);
 			buf[dlen] = '\0';
+			vlan_id = atoi(buf);
+			if (vlan_id <= 0)
+				break;
 			tun->tag_used++;
-			tun->vlanid = atoi(buf);
+			tun->vlanid = vlan_id;
+			break;
+		case RADIUS_ATTR_EGRESS_VLANID: /* RFC 4675 */
+			if (attr->length != 6)
+				break;
+			vlan_id = WPA_GET_BE24(data + 1);
+			if (vlan_id <= 0)
+				break;
+			if (data[0] == 0x32)
+				*untagged = vlan_id;
+			else if (data[0] == 0x31 && tagged &&
+				 taggedidx < numtagged)
+				tagged[taggedidx++] = vlan_id;
 			break;
 		}
 	}
 
+	/* use  tunnel with lowest tag for untagged vlan id */
 	for (i = 0; i < RADIUS_TUNNEL_TAGS; i++) {
 		tun = &tunnel[i];
 		if (tun->tag_used &&
 		    tun->type == RADIUS_TUNNEL_TYPE_VLAN &&
 		    tun->medium_type == RADIUS_TUNNEL_MEDIUM_TYPE_802 &&
 		    tun->vlanid > 0)
-			return tun->vlanid;
+		{
+			*untagged = tun->vlanid;
+			break;
+		}
 	}
 
+	if (taggedidx)
+		qsort(tagged, taggedidx, sizeof(int), cmp_int);
+
+	if (*untagged > 0)
+		return 1;
+	if (taggedidx)
+		return 1;
 	return 0;
 }
 

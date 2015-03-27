@@ -645,9 +645,16 @@ int hostapd_rate_found(int *list, int rate)
 int hostapd_vlan_id_valid(struct hostapd_vlan *vlan, struct vlan_description vlan_id)
 {
 	struct hostapd_vlan *v = vlan;
+	int i;
 
-	if (!vlan_id.notempty || vlan_id.untagged <= 0 ||
-	    vlan_id.untagged > MAX_VLAN_ID)
+	if (!vlan_id.notempty)
+		return 0;
+ 	if (vlan_id.untagged < 0 || vlan_id.untagged > MAX_VLAN_ID)
+		return 0;
+	for (i = 0; i < MAX_NUM_TAGGED_VLAN; i++)
+ 		if (vlan_id.tagged[i] < 0 || vlan_id.tagged[i] > MAX_VLAN_ID)
+			return 0;
+	if (!vlan_id.untagged && !vlan_id.tagged[0])
 		return 0;
 
 	while (v) {

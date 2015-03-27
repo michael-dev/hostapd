@@ -816,16 +816,16 @@ int ap_sta_set_vlan(struct hostapd_data *hapd, struct sta_info *sta,
 		os_memset(&vlan_desc, 0, sizeof(vlan_desc));
 
 	/* check if there is something to do */
-	if (sta->ssid->per_sta_vif && !sta->vlan_id) {
+	if (hapd->conf->ssid.per_sta_vif && !sta->vlan_id) {
 		/* this sta is lacking its own vif */
-	} else if (sta->ssid->dynamic_vlan == DYNAMIC_VLAN_DISABLED &&
-		   !sta->ssid->per_sta_vif && sta->vlan_id) {
+	} else if (hapd->conf->ssid.dynamic_vlan == DYNAMIC_VLAN_DISABLED &&
+		   !hapd->conf->ssid.per_sta_vif && sta->vlan_id) {
 		/* sta->vlan_id needs to be reset */
 	} else if (!os_memcmp(&vlan_desc, &sta->vlan_desc, sizeof(vlan_desc)))
 		return 0; /* nothing to change */
 
 	/* now the real vlan changed or the sta just needs its own vif */
-	if (sta->ssid->per_sta_vif) {
+	if (hapd->conf->ssid.per_sta_vif) {
 		/* assign a new vif, always */
 		/* find a free vlan_id sufficiently big */
 		vlan_id = ap_sta_get_free_vlan_id(hapd);
@@ -861,12 +861,16 @@ int ap_sta_set_vlan(struct hostapd_data *hapd, struct sta_info *sta,
 		else if (wildcard_vlan) {
 			vlan = wildcard_vlan;
 			vlan_id = vlan_desc.untagged;
+			if (vlan_desc.tagged[0])
+				/* tagged vlan configuration */
+				vlan_id = ap_sta_get_free_vlan_id(hapd);
 		} else {
 			hostapd_logger(hapd, sta->addr,
 				       HOSTAPD_MODULE_IEEE80211,
 				       HOSTAPD_LEVEL_DEBUG, "missing vlan and "
-				       "wildcard for vlan=%d",
-				       vlan_desc.untagged);
+				       "wildcard for vlan=%d%s",
+				       vlan_desc.untagged,
+				       vlan_desc.tagged[0] ? "+" : "");
 			vlan_id = 0;
 			ret = -1;
 			goto done;
@@ -879,8 +883,10 @@ int ap_sta_set_vlan(struct hostapd_data *hapd, struct sta_info *sta,
 			hostapd_logger(hapd, sta->addr,
 				       HOSTAPD_MODULE_IEEE80211,
 				       HOSTAPD_LEVEL_DEBUG, "could not add "
-				       "dynamic VLAN interface for vlan=%d",
-				       vlan_desc.untagged);
+				       "dynamic VLAN interface for "
+				       "vlan=%d%s",
+				       vlan_desc.untagged,
+				       vlan_desc.tagged[0] ? "+" : "");
 			vlan_id = 0;
 			ret = -1;
 			goto done;
