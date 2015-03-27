@@ -558,6 +558,65 @@ static int vlan_set_name_type(unsigned int name_type)
 
 #endif /* CONFIG_VLAN_NETLINK */
 
+static void vlan_newlink_tagged(int vlan_naming, char* tagged_interface,
+				char* br_name, int vid,
+				struct hostapd_data *hapd)
+{
+	char vlan_ifname[IFNAMSIZ];
+	int clean;
+
+	if (vlan_naming ==  DYNAMIC_VLAN_NAMING_WITH_DEVICE)
+		os_snprintf(vlan_ifname, sizeof(vlan_ifname), "%s.%d",
+			     tagged_interface,  vid);
+	else
+		os_snprintf(vlan_ifname, sizeof(vlan_ifname), "vlan%d",
+			     vid);
+
+	clean = 0;
+	ifconfig_up(tagged_interface);
+	if (!vlan_add(tagged_interface, vid, vlan_ifname))
+		clean |= DVLAN_CLEAN_VLAN;
+
+	if (!br_addif(br_name, vlan_ifname))
+		clean |= DVLAN_CLEAN_VLAN_PORT;
+
+	dyn_iface_get(vlan_ifname, clean, hapd);
+
+	ifconfig_up(vlan_ifname);
+}
+
+static void vlan_bridge_name(char *br_name, struct hostapd_data *hapd, int vid)
+{
+	char *tagged_interface = hapd->conf->ssid.vlan_tagged_interface;
+
+	if (hapd->conf->vlan_bridge[0]) {
+		os_snprintf(br_name, IFNAMSIZ, "%s%d",
+			    hapd->conf->vlan_bridge,  vid);
+	} else if (tagged_interface) {
+		os_snprintf(br_name, IFNAMSIZ, "br%s.%d",
+			    tagged_interface, vid);
+	} else {
+		os_snprintf(br_name, IFNAMSIZ,
+		            "brvlan%d", vid);
+	}
+}
+
+static void vlan_get_bridge(char *br_name, struct hostapd_data *hapd, int vid)
+{
+	char *tagged_interface = hapd->conf->ssid.vlan_tagged_interface;
+	int vlan_naming = hapd->conf->ssid.vlan_naming;
+
+	if (!br_addbr(br_name))
+		dyn_iface_get(br_name, DVLAN_CLEAN_BR, hapd);
+	else
+		dyn_iface_get(br_name, 0, hapd);
+
+	ifconfig_up(br_name);
+
+	if (tagged_interface)
+		vlan_newlink_tagged(vlan_naming, tagged_interface, br_name,
+				    vid, hapd);
+}
 
 static int vlan_if_add(struct hostapd_data *hapd, struct hostapd_vlan *vlan,
 		       int existsok)
@@ -609,12 +668,9 @@ static int vlan_if_remove(struct hostapd_data *hapd, struct hostapd_vlan *vlan)
 
 static void vlan_newlink(char *ifname, struct hostapd_data *hapd)
 {
-	char vlan_ifname[IFNAMSIZ];
 	char br_name[IFNAMSIZ];
 	struct hostapd_vlan *vlan;
-	char *tagged_interface = hapd->conf->ssid.vlan_tagged_interface;
-	int vlan_naming = hapd->conf->ssid.vlan_naming;
-	int clean, untagged, notempty;
+	int untagged, notempty;
 
 	wpa_printf(MSG_DEBUG, "VLAN: vlan_newlink(%s)", ifname);
 
@@ -636,51 +692,9 @@ static void vlan_newlink(char *ifname, struct hostapd_data *hapd)
 					vlan->clean |= DVLAN_CLEAN_WLAN_PORT;
 			}
 		} else if (untagged > 0 && untagged <= MAX_VLAN_ID) {
-			if (hapd->conf->vlan_bridge[0]) {
-				os_snprintf(br_name, sizeof(br_name), "%s%d",
-					    hapd->conf->vlan_bridge,
-					    untagged);
-			} else if (tagged_interface) {
-				os_snprintf(br_name, sizeof(br_name),
-				            "br%s.%d", tagged_interface,
-					    untagged);
-			} else {
-				os_snprintf(br_name, sizeof(br_name),
-				            "brvlan%d", untagged);
-			}
+			vlan_bridge_name(br_name, hapd, untagged);
 
-			if (!br_addbr(br_name))
-				dyn_iface_get(br_name, DVLAN_CLEAN_BR, hapd);
-			else
-				dyn_iface_get(br_name, 0, hapd);
-
-			ifconfig_up(br_name);
-
-			if (tagged_interface) {
-				if (vlan_naming ==
-				    DYNAMIC_VLAN_NAMING_WITH_DEVICE)
-					os_snprintf(vlan_ifname,
-						    sizeof(vlan_ifname),
-						    "%s.%d", tagged_interface,
-						    untagged);
-				else
-					os_snprintf(vlan_ifname,
-						    sizeof(vlan_ifname),
-						    "vlan%d", untagged);
-
-				clean = 0;
-				ifconfig_up(tagged_interface);
-				if (!vlan_add(tagged_interface, untagged,
-					      vlan_ifname))
-					clean |= DVLAN_CLEAN_VLAN;
-
-				if (!br_addif(br_name, vlan_ifname))
-					clean |= DVLAN_CLEAN_VLAN_PORT;
-
-				dyn_iface_get(vlan_ifname, clean, hapd);
-
-				ifconfig_up(vlan_ifname);
-			}
+			vlan_get_bridge(br_name, hapd, untagged);
 
 			if (!br_addif(br_name, ifname))
 				vlan->clean |= DVLAN_CLEAN_WLAN_PORT;
@@ -692,15 +706,54 @@ static void vlan_newlink(char *ifname, struct hostapd_data *hapd)
 	}
 }
 
+static void vlan_dellink_tagged(int vlan_naming, char* tagged_interface,
+				char* br_name, int vid,
+				struct hostapd_data *hapd)
+{
+	char vlan_ifname[IFNAMSIZ];
+	int clean;
+
+	if (vlan_naming ==  DYNAMIC_VLAN_NAMING_WITH_DEVICE)
+		os_snprintf(vlan_ifname, sizeof(vlan_ifname), "%s.%d",
+			     tagged_interface,  vid);
+	else
+		os_snprintf(vlan_ifname, sizeof(vlan_ifname), "vlan%d",
+			     vid);
+
+	clean = dyn_iface_put(vlan_ifname, hapd);
+
+	if (clean & DVLAN_CLEAN_VLAN_PORT)
+		br_delif(br_name, vlan_ifname);
+
+	if (clean & DVLAN_CLEAN_VLAN) {
+		ifconfig_down(vlan_ifname);
+		vlan_rem(vlan_ifname);
+	}
+}
+
+static void vlan_put_bridge(char *br_name, struct hostapd_data *hapd, int vid)
+{
+	int clean;
+	char *tagged_interface = hapd->conf->ssid.vlan_tagged_interface;
+	int vlan_naming = hapd->conf->ssid.vlan_naming;
+
+	if (tagged_interface)
+		vlan_dellink_tagged(vlan_naming, tagged_interface, br_name,
+				    vid, hapd);
+
+	clean = dyn_iface_put(br_name, hapd);
+	if ((clean & DVLAN_CLEAN_BR) &&
+	    br_getnumports(br_name) == 0) {
+		ifconfig_down(br_name);
+		br_delbr(br_name);
+	}
+}
 
 static void vlan_dellink(char *ifname, struct hostapd_data *hapd)
 {
-	char vlan_ifname[IFNAMSIZ];
-	char br_name[IFNAMSIZ];
 	struct hostapd_vlan *first, *prev, *vlan = hapd->conf->vlan;
-	char *tagged_interface = hapd->conf->ssid.vlan_tagged_interface;
-	int vlan_naming = hapd->conf->ssid.vlan_naming;
-	int clean, untagged, notempty;
+	char br_name[IFNAMSIZ];
+	int untagged, notempty;
 
 	wpa_printf(MSG_DEBUG, "VLAN: vlan_dellink(%s)", ifname);
 
@@ -724,51 +777,12 @@ static void vlan_dellink(char *ifname, struct hostapd_data *hapd)
 			if (hapd->conf->bridge[0] && vlan->clean & DVLAN_CLEAN_WLAN_PORT)
 				br_delif(hapd->conf->bridge, ifname);
 		} else if (untagged > 0 && untagged <= MAX_VLAN_ID) {
-			if (hapd->conf->vlan_bridge[0]) {
-				os_snprintf(br_name, sizeof(br_name), "%s%d",
-					    hapd->conf->vlan_bridge,
-					    untagged);
-			} else if (tagged_interface) {
-				os_snprintf(br_name, sizeof(br_name),
-				            "br%s.%d", tagged_interface,
-					    untagged);
-			} else {
-				os_snprintf(br_name, sizeof(br_name),
-				            "brvlan%d", untagged);
-			}
+			vlan_bridge_name(br_name, hapd, untagged);
 
 			if (vlan->clean & DVLAN_CLEAN_WLAN_PORT)
 				br_delif(br_name, vlan->ifname);
 
-			if (tagged_interface) {
-				if (vlan_naming ==
-				    DYNAMIC_VLAN_NAMING_WITH_DEVICE)
-					os_snprintf(vlan_ifname,
-						    sizeof(vlan_ifname),
-						    "%s.%d", tagged_interface,
-						    untagged);
-				else
-					os_snprintf(vlan_ifname,
-						    sizeof(vlan_ifname),
-						    "vlan%d", untagged);
-
-				clean = dyn_iface_put(vlan_ifname, hapd);
-
-				if (clean & DVLAN_CLEAN_VLAN_PORT)
-					br_delif(br_name, vlan_ifname);
-
-				if (clean & DVLAN_CLEAN_VLAN) {
-					ifconfig_down(vlan_ifname);
-					vlan_rem(vlan_ifname);
-				}
-			}
-
-			clean = dyn_iface_put(br_name, hapd);
-			if ((clean & DVLAN_CLEAN_BR) &&
-			    br_getnumports(br_name) == 0) {
-				ifconfig_down(br_name);
-				br_delbr(br_name);
-			}
+			vlan_put_bridge(br_name, hapd, untagged);
 		}
 
 skip_counting:
