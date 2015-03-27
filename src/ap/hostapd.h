@@ -49,6 +49,9 @@ struct hapd_interfaces {
 	struct hostapd_iface **iface;
 
 	size_t terminate_on_error;
+#ifndef CONFIG_NO_VLAN
+	void *vlan_priv;
+#endif
 };
 
 enum hostapd_chan_status {

@@ -35,6 +35,87 @@
 struct full_dynamic_vlan {
 	int s; /* socket on which to listen for new/removed interfaces. */
 };
+
+struct dynamic_iface {
+	char ifname[IFNAMSIZ+1];
+	int usage;
+
+	#define DVLAN_CLEAN_BR         0x1
+	#define DVLAN_CLEAN_VLAN       0x2
+	#define DVLAN_CLEAN_VLAN_PORT  0x4
+	int clean;
+
+	struct dynamic_iface *next;
+};
+
+/* Increment ref counter for ifname and add clean flag.
+ * If not in list, add it only if some flags are given.
+ */
+static void dyn_iface_get(char* ifname, int clean, struct hostapd_data *hapd) {
+	struct dynamic_iface *next, **dynamic_ifaces;
+	struct hapd_interfaces *interfaces;
+
+	interfaces = hapd->iface->interfaces;
+	dynamic_ifaces = (struct dynamic_iface**) &interfaces->vlan_priv;
+
+	for (next = *dynamic_ifaces; next; next = next->next) {
+		if (os_strcmp(ifname, next->ifname) == 0)
+			break;
+	}
+
+	if (next) {
+		next->usage++;
+		next->clean |= clean;
+		return;
+	}
+
+	if (!clean)
+		return;
+
+	next = os_zalloc(sizeof(*next));
+	if (!next)
+		return;
+	os_strlcpy(next->ifname, ifname, sizeof(next->ifname));
+	next->usage = 1;
+	next->clean = clean;
+	next->next = *dynamic_ifaces;
+	*dynamic_ifaces = next;
+}
+
+/* Decrement reference counter for given ifname.
+ * Return clean flag iff reference counter was decreased to zero, else zero
+ */
+static int dyn_iface_put(char* ifname, struct hostapd_data *hapd) {
+	struct dynamic_iface *next, *prev = NULL, **dynamic_ifaces;
+	struct hapd_interfaces *interfaces;
+	int clean;
+
+	interfaces = hapd->iface->interfaces;
+	dynamic_ifaces = (struct dynamic_iface**) &interfaces->vlan_priv;
+
+	for (next = *dynamic_ifaces; next; next = next->next) {
+		if (os_strcmp(ifname, next->ifname) == 0)
+			break;
+		prev = next;
+	}
+
+	if (!next)
+		return 0;
+
+	next->usage--;
+	if (next->usage)
+		return 0;
+
+	if (prev)
+		prev->next = next->next;
+	else
+		*dynamic_ifaces = next->next;
+	clean = next->clean;
+	os_free(next);
+
+	return clean;
+}
+
 #endif /* CONFIG_FULL_DYNAMIC_VLAN */
 
 
@@ -533,6 +614,7 @@ static void vlan_newlink(char *ifname, struct hostapd_data *hapd)
 	struct hostapd_vlan *vlan = hapd->conf->vlan;
 	char *tagged_interface = hapd->conf->ssid.vlan_tagged_interface;
 	int vlan_naming = hapd->conf->ssid.vlan_naming;
+	int clean;
 
 	wpa_printf(MSG_DEBUG, "VLAN: vlan_newlink(%s)", ifname);
 
@@ -554,7 +636,9 @@ static void vlan_newlink(char *ifname, struct hostapd_data *hapd)
 			}
 
 			if (!br_addbr(br_name))
-				vlan->clean |= DVLAN_CLEAN_BR;
+				dyn_iface_get(br_name, DVLAN_CLEAN_BR, hapd);
+			else
+				dyn_iface_get(br_name, 0, hapd);
 
 			ifconfig_up(br_name);
 
@@ -570,13 +654,16 @@ static void vlan_newlink(char *ifname, struct hostapd_data *hapd)
 						    sizeof(vlan_ifname),
 						    "vlan%d", vlan->vlan_id);
 
+				clean = 0;
 				ifconfig_up(tagged_interface);
 				if (!vlan_add(tagged_interface, vlan->vlan_id,
 					      vlan_ifname))
-					vlan->clean |= DVLAN_CLEAN_VLAN;
+					clean |= DVLAN_CLEAN_VLAN;
 
 				if (!br_addif(br_name, vlan_ifname))
-					vlan->clean |= DVLAN_CLEAN_VLAN_PORT;
+					clean |= DVLAN_CLEAN_VLAN_PORT;
+
+				dyn_iface_get(vlan_ifname, clean, hapd);
 
 				ifconfig_up(vlan_ifname);
 			}
@@ -600,13 +687,15 @@ static void vlan_dellink(char *ifname, struct hostapd_data *hapd)
 	struct hostapd_vlan *first, *prev, *vlan = hapd->conf->vlan;
 	char *tagged_interface = hapd->conf->ssid.vlan_tagged_interface;
 	int vlan_naming = hapd->conf->ssid.vlan_naming;
+	int clean;
 
 	wpa_printf(MSG_DEBUG, "VLAN: vlan_dellink(%s)", ifname);
 
 	first = prev = vlan;
 
 	while (vlan) {
-		if (os_strcmp(ifname, vlan->ifname) == 0) {
+		if (os_strcmp(ifname, vlan->ifname) == 0 &&
+		    vlan->configured) {
 			if (hapd->conf->vlan_bridge[0]) {
 				os_snprintf(br_name, sizeof(br_name), "%s%d",
 					    hapd->conf->vlan_bridge,
@@ -634,20 +723,27 @@ static void vlan_dellink(char *ifname, struct hostapd_data *hapd)
 					os_snprintf(vlan_ifname,
 						    sizeof(vlan_ifname),
 						    "vlan%d", vlan->vlan_id);
-				if (vlan->clean & DVLAN_CLEAN_VLAN_PORT)
-					br_delif(br_name, vlan_ifname);
-				ifconfig_down(vlan_ifname);
 
-				if (vlan->clean & DVLAN_CLEAN_VLAN)
+				clean = dyn_iface_put(vlan_ifname, hapd);
+
+				if (clean & DVLAN_CLEAN_VLAN_PORT)
+					br_delif(br_name, vlan_ifname);
+
+				if (clean & DVLAN_CLEAN_VLAN) {
+					ifconfig_down(vlan_ifname);
 					vlan_rem(vlan_ifname);
+				}
 			}
 
-			if ((vlan->clean & DVLAN_CLEAN_BR) &&
+			clean = dyn_iface_put(br_name, hapd);
+			if ((clean & DVLAN_CLEAN_BR) &&
 			    br_getnumports(br_name) == 0) {
 				ifconfig_down(br_name);
 				br_delbr(br_name);
 			}
+		}
 
+		if (os_strcmp(ifname, vlan->ifname) == 0) {
 			if (vlan == first) {
 				hapd->conf->vlan = vlan->next;
 			} else {
@@ -1021,8 +1117,10 @@ int vlan_remove_dynamic(struct hostapd_data *hapd, int vlan_id)
 	if (vlan == NULL)
 		return 1;
 
-	if (vlan->dynamic_vlan == 0)
+	if (vlan->dynamic_vlan == 0) {
 		vlan_if_remove(hapd, vlan);
+		vlan_dellink(vlan->ifname, hapd);
+	}
 
 	return 0;
 }
