@@ -789,6 +789,23 @@ int ap_sta_wps_cancel(struct hostapd_data *hapd,
 #endif /* CONFIG_WPS */
 
 
+static int ap_sta_get_free_vlan_id(struct hostapd_data *hapd)
+{
+	struct hostapd_vlan *vlan = NULL;
+	int vlan_id = MAX_VLAN_ID + 2;
+retry:
+	vlan = hapd->conf->vlan;
+	while (vlan) {
+		if (vlan->vlan_id == vlan_id)
+			break;
+		vlan = vlan->next;
+	}
+	if (!vlan)
+		return vlan_id;
+	vlan_id++;
+	goto retry;
+}
+
 int ap_sta_set_vlan(struct hostapd_data *hapd, struct sta_info *sta,
 		    struct vlan_description vlan_desc)
 {
@@ -797,10 +814,38 @@ int ap_sta_set_vlan(struct hostapd_data *hapd, struct sta_info *sta,
 
 	if (hapd->conf->ssid.dynamic_vlan == DYNAMIC_VLAN_DISABLED)
 		os_memset(&vlan_desc, 0, sizeof(vlan_desc));
-	else if (vlan_desc.notempty) {
-		if (!os_memcmp(&vlan_desc, &sta->vlan_desc, sizeof(vlan_desc)))
-			return 0; /* nothing to change */
 
+	/* check if there is something to do */
+	if (sta->ssid->per_sta_vif && !sta->vlan_id) {
+		/* this sta is lacking its own vif */
+	} else if (sta->ssid->dynamic_vlan == DYNAMIC_VLAN_DISABLED &&
+		   !sta->ssid->per_sta_vif && sta->vlan_id) {
+		/* sta->vlan_id needs to be reset */
+	} else if (!os_memcmp(&vlan_desc, &sta->vlan_desc, sizeof(vlan_desc)))
+		return 0; /* nothing to change */
+
+	/* now the real vlan changed or the sta just needs its own vif */
+	if (sta->ssid->per_sta_vif) {
+		/* assign a new vif, always */
+		/* find a free vlan_id sufficiently big */
+		vlan_id = ap_sta_get_free_vlan_id(hapd);
+		/* get wildcard vlan */
+		vlan = hapd->conf->vlan;
+		while (vlan) {
+			if (vlan->vlan_id == VLAN_ID_WILDCARD)
+				break;
+			vlan = vlan->next;
+		}
+		if (!vlan) {
+			hostapd_logger(hapd, sta->addr,
+				       HOSTAPD_MODULE_IEEE80211,
+				       HOSTAPD_LEVEL_DEBUG, "per_sta_vif "
+				       "missing wildcard ");
+			vlan_id = 0;
+			ret = -1;
+			goto done;
+		}
+	} else if (vlan_desc.notempty) {
 		struct hostapd_vlan *wildcard_vlan = NULL;
 		vlan = hapd->conf->vlan;
 		while (vlan) {

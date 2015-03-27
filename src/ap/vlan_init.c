@@ -611,18 +611,31 @@ static void vlan_newlink(char *ifname, struct hostapd_data *hapd)
 {
 	char vlan_ifname[IFNAMSIZ];
 	char br_name[IFNAMSIZ];
-	struct hostapd_vlan *vlan = hapd->conf->vlan;
+	struct hostapd_vlan *vlan;
 	char *tagged_interface = hapd->conf->ssid.vlan_tagged_interface;
 	int vlan_naming = hapd->conf->ssid.vlan_naming;
-	int clean, untagged;
+	int clean, untagged, notempty;
 
 	wpa_printf(MSG_DEBUG, "VLAN: vlan_newlink(%s)", ifname);
 
-	while (vlan) {
-		untagged = vlan->vlan_desc.untagged;
-		if (os_strcmp(ifname, vlan->ifname) == 0 && !vlan->configured) {
-			vlan->configured = 1;
+	for (vlan = hapd->conf->vlan; vlan; vlan = vlan->next) {
+		if (vlan->configured)
+			continue;
+		if (os_strcmp(ifname, vlan->ifname))
+			continue;
 
+		vlan->configured = 1;
+
+		notempty = vlan->vlan_desc.notempty;
+		untagged = vlan->vlan_desc.untagged;
+
+		if (!notempty) {
+			/* non-VLAN sta */
+			if (hapd->conf->bridge[0]) {
+				if (!br_addif(hapd->conf->bridge, ifname))
+					vlan->clean |= DVLAN_CLEAN_WLAN_PORT;
+			}
+		} else if (untagged > 0 && untagged <= MAX_VLAN_ID) {
 			if (hapd->conf->vlan_bridge[0]) {
 				os_snprintf(br_name, sizeof(br_name), "%s%d",
 					    hapd->conf->vlan_bridge,
@@ -671,12 +684,11 @@ static void vlan_newlink(char *ifname, struct hostapd_data *hapd)
 
 			if (!br_addif(br_name, ifname))
 				vlan->clean |= DVLAN_CLEAN_WLAN_PORT;
-
-			ifconfig_up(ifname);
-
-			break;
 		}
-		vlan = vlan->next;
+
+		ifconfig_up(ifname);
+
+		break;
 	}
 }
 
@@ -688,16 +700,30 @@ static void vlan_dellink(char *ifname, struct hostapd_data *hapd)
 	struct hostapd_vlan *first, *prev, *vlan = hapd->conf->vlan;
 	char *tagged_interface = hapd->conf->ssid.vlan_tagged_interface;
 	int vlan_naming = hapd->conf->ssid.vlan_naming;
-	int clean, untagged;
+	int clean, untagged, notempty;
 
 	wpa_printf(MSG_DEBUG, "VLAN: vlan_dellink(%s)", ifname);
 
 	first = prev = vlan;
 
 	while (vlan) {
+		if (os_strcmp(ifname, vlan->ifname)) {
+			prev = vlan;
+			vlan = vlan->next;
+			continue;
+		}
+
+		if (!vlan->configured)
+			goto skip_counting;
+
+		notempty = vlan->vlan_desc.notempty;
 		untagged = vlan->vlan_desc.untagged;
-		if (os_strcmp(ifname, vlan->ifname) == 0 &&
-		    vlan->configured) {
+
+		if (!notempty) {
+			/* non-VLAN sta */
+			if (hapd->conf->bridge[0] && vlan->clean & DVLAN_CLEAN_WLAN_PORT)
+				br_delif(hapd->conf->bridge, ifname);
+		} else if (untagged > 0 && untagged <= MAX_VLAN_ID) {
 			if (hapd->conf->vlan_bridge[0]) {
 				os_snprintf(br_name, sizeof(br_name), "%s%d",
 					    hapd->conf->vlan_bridge,
@@ -745,18 +771,15 @@ static void vlan_dellink(char *ifname, struct hostapd_data *hapd)
 			}
 		}
 
-		if (os_strcmp(ifname, vlan->ifname) == 0) {
-			if (vlan == first) {
-				hapd->conf->vlan = vlan->next;
-			} else {
-				prev->next = vlan->next;
-			}
-			os_free(vlan);
-
-			break;
+skip_counting:
+		if (vlan == first) {
+			hapd->conf->vlan = vlan->next;
+		} else {
+			prev->next = vlan->next;
 		}
-		prev = vlan;
-		vlan = vlan->next;
+		os_free(vlan);
+
+		break;
 	}
 }
 
@@ -1013,8 +1036,8 @@ int vlan_init(struct hostapd_data *hapd)
 	hapd->full_dynamic_vlan = full_dynamic_vlan_init(hapd);
 #endif /* CONFIG_FULL_DYNAMIC_VLAN */
 
-	if (hapd->conf->ssid.dynamic_vlan != DYNAMIC_VLAN_DISABLED &&
-	    !hapd->conf->vlan) {
+	if ((hapd->conf->ssid.dynamic_vlan != DYNAMIC_VLAN_DISABLED ||
+	     hapd->conf->ssid.per_sta_vif) && !hapd->conf->vlan) {
 		/* dynamic vlans enabled but no (or empty) vlan_file given */
 		struct hostapd_vlan *vlan;
 		vlan = os_zalloc(sizeof(*vlan));
@@ -1057,9 +1080,7 @@ struct hostapd_vlan * vlan_add_dynamic(struct hostapd_data *hapd,
 	struct hostapd_vlan *n = NULL;
 	char *ifname, *pos;
 
-	if (vlan == NULL || vlan_desc.untagged <= 0 ||
-	    vlan_desc.untagged > MAX_VLAN_ID ||
-	    vlan->vlan_id != VLAN_ID_WILDCARD)
+	if (vlan == NULL || vlan->vlan_id != VLAN_ID_WILDCARD)
 		return NULL;
 
 	wpa_printf(MSG_DEBUG, "VLAN: %s(vlan_id=%d ifname=%s)",
