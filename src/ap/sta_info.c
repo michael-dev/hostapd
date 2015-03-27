@@ -865,12 +865,16 @@ int ap_sta_set_vlan(struct hostapd_data *hapd, struct sta_info *sta,
 		else if (wildcard_vlan) {
 			vlan = wildcard_vlan;
 			vlan_id = vlan_desc.untagged;
+			if (vlan_desc.tagged[0])
+				/* tagged vlan configuration */
+				vlan_id = ap_sta_get_free_vlan_id(hapd);
 		} else {
 			hostapd_logger(hapd, sta->addr,
 				       HOSTAPD_MODULE_IEEE80211,
 				       HOSTAPD_LEVEL_DEBUG, "missing vlan and "
-				       "wildcard for vlan=%d",
-				       vlan_desc.untagged);
+				       "wildcard for vlan=%d%s",
+				       vlan_desc.untagged,
+				       vlan_desc.tagged[0] ? "+" : "");
 			vlan_id = 0;
 			ret = -1;
 			goto done;
@@ -883,8 +887,10 @@ int ap_sta_set_vlan(struct hostapd_data *hapd, struct sta_info *sta,
 			hostapd_logger(hapd, sta->addr,
 				       HOSTAPD_MODULE_IEEE80211,
 				       HOSTAPD_LEVEL_DEBUG, "could not add "
-				       "dynamic VLAN interface for vlan=%d",
-				       vlan_desc.untagged);
+				       "dynamic VLAN interface for "
+				       "vlan=%d%s",
+				       vlan_desc.untagged,
+				       vlan_desc.tagged[0] ? "+" : "");
 			vlan_id = 0;
 			ret = -1;
 			goto done;
