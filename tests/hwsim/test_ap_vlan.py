@@ -21,6 +21,7 @@ import hwsim_utils
 import hostapd
 from utils import iface_is_in_bridge, HwsimSkip
 import os
+import netifaces
 from tshark import run_tshark
 
 def test_ap_vlan_open(dev, apdev):
@@ -137,6 +138,10 @@ def test_ap_vlan_wpa2_radius_id_change(dev, apdev):
         raise Exception("Unexpected VLAN ID: " + sta['vlan_id'])
     hwsim_utils.test_connectivity_iface(dev[0], hapd, "brvlan2")
 
+    ifaces = netifaces.interfaces()
+    if "brvlan1" in ifaces:
+        raise Exception("bridge brvlan1 has not been cleaned up")
+
     logger.info("VLAN-ID -> 1")
     time.sleep(1)
 
@@ -168,6 +173,10 @@ def test_ap_vlan_wpa2_radius_id_change(dev, apdev):
         # try again to avoid reporting issues related to that.
         logger.info("First VLAN-ID 1 data test failed - try again")
         hwsim_utils.test_connectivity_iface(dev[0], hapd, "brvlan1")
+
+    ifaces = netifaces.interfaces()
+    if "brvlan2" in ifaces:
+        raise Exception("bridge brvlan2 has not been cleaned up")
 
 def test_ap_vlan_wpa2_radius_required(dev, apdev):
     """AP VLAN with WPA2-Enterprise and RADIUS attributes required"""
