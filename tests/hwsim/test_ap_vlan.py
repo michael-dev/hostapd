@@ -195,3 +195,22 @@ def test_ap_vlan_tagged(dev, apdev):
     hwsim_utils.test_connectivity_iface(dev[0], hapd, "brlo.1")
     hwsim_utils.test_connectivity_iface(dev[1], hapd, "brlo.2")
     hwsim_utils.test_connectivity(dev[2], hapd)
+
+def test_ap_vlan_reconnect(dev, apdev):
+    """AP VLAN with WPA2-PSK connect, disconnect, connect"""
+    params = hostapd.wpa2_params(ssid="test-vlan",
+                                 passphrase="12345678")
+    params['dynamic_vlan'] = "1";
+    params['accept_mac_file'] = "hostapd.accept";
+    hapd = hostapd.add_ap(apdev[0]['ifname'], params)
+
+    logger.info("connect sta")
+    dev[0].connect("test-vlan", psk="12345678", scan_freq="2412")
+    hwsim_utils.test_connectivity_iface(dev[0], hapd, "brvlan1")
+    logger.info("disconnect sta")
+    dev[0].request("DISCONNECT")
+    dev[0].wait_disconnected(timeout=10)
+    time.sleep(1)
+    logger.info("reconnect sta")
+    dev[0].connect("test-vlan", psk="12345678", scan_freq="2412")
+    hwsim_utils.test_connectivity_iface(dev[0], hapd, "brvlan1")
