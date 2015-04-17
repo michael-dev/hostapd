@@ -522,3 +522,27 @@ def test_ap_vlan_wpa2_radius_tagged(dev, apdev):
     finally: 
         subprocess.call(['ifconfig','wlan0.1','down'])
         subprocess.call(['ip','link','del','wlan0.1'])
+
+def test_ap_vlan_wpa2_radius_mixed(dev, apdev):
+    """AP VLAN with WPA2-Enterprise and RADIUS EGRESS_VLANID attributes"""
+    try:
+        subprocess.call(['ip','link','add','link','wlan0','name','wlan0.1','type','vlan','id','1'])
+        subprocess.call(['ifconfig','wlan0.1','up'])
+
+        params = hostapd.wpa2_eap_params(ssid="test-vlan")
+        params['dynamic_vlan'] = "1"
+        params["vlan_naming"] = "1"
+        hapd = hostapd.add_ap(apdev[0]['ifname'], params)
+
+        dev[0].connect("test-vlan", key_mgmt="WPA-EAP", eap="PAX",
+                       identity="vlan12mixed",
+                       password_hex="0123456789abcdef0123456789abcdef",
+                       scan_freq="2412")
+
+	logger.info("test connectivity in tagged vlan 1")
+        hwsim_utils.run_connectivity_test(dev[0], hapd, 0, ifname1="wlan0.1", ifname2="brvlan1")
+	logger.info("test connectivity in untagged vlan 2")
+        hwsim_utils.run_connectivity_test(dev[0], hapd, 0, ifname1="wlan0", ifname2="brvlan2")
+    finally: 
+        subprocess.call(['ifconfig','wlan0.1','down'])
+        subprocess.call(['ip','link','del','wlan0.1'])
