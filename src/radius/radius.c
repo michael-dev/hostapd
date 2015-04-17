@@ -255,6 +255,8 @@ static const struct radius_attr_type radius_attrs[] =
 	  RADIUS_ATTR_HEXDUMP },
 	{ RADIUS_ATTR_WLAN_GROUP_MGMT_CIPHER, "WLAN-Group-Mgmt-Pairwise-Cipher",
 	  RADIUS_ATTR_HEXDUMP },
+	{ RADIUS_ATTR_EGRESS_VLANID, "EGRESS-VLANID",
+	  RADIUS_ATTR_HEXDUMP },
 };
 #define RADIUS_ATTRS ARRAY_SIZE(radius_attrs)
 
