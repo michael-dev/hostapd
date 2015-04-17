@@ -469,3 +469,22 @@ def test_ap_vlan_iface_cleanup_multibss_per_sta_vif(dev, apdev, p):
        per_sta_vif is enabled
     """
     test_ap_vlan_iface_cleanup_multibss(dev, apdev, p, cfgfile='multi-bss-iface-per_sta_vif.conf')
+
+def test_ap_open_per_sta_vif(dev, apdev):
+    """AP VLAN with open network"""
+    params = { "ssid": "test-vlan-open",
+               "per_sta_vif": "1" }
+    hapd = hostapd.add_ap(apdev[0]['ifname'], params)
+
+    dev[0].connect("test-vlan-open", key_mgmt="NONE", scan_freq="2412")
+    hwsim_utils.test_connectivity_iface(dev[0], hapd, "wlan3.4096")
+
+def test_ap_vlan_open_per_sta_vif(dev, apdev):
+    """AP VLAN with open network"""
+    params = { "ssid": "test-vlan-open",
+               "per_sta_vif": "1",
+               "dynamic_vlan": "1" }
+    hapd = hostapd.add_ap(apdev[0]['ifname'], params)
+
+    dev[0].connect("test-vlan-open", key_mgmt="NONE", scan_freq="2412")
+    hwsim_utils.test_connectivity_iface(dev[0], hapd, "wlan3.4096")
