@@ -892,15 +892,6 @@ int ap_sta_set_vlan(struct hostapd_data *hapd, struct sta_info *sta,
 			goto done;
 		}
 
-		if (vlan_setup_encryption_dyn(hapd, vlan->ifname) != 0) {
-			hostapd_logger(hapd, sta->addr,
-				       HOSTAPD_MODULE_IEEE80211,
-				       HOSTAPD_LEVEL_DEBUG, "could not "
-				       "configure encryption for dynamic VLAN "
-				       "interface for vlan_id=%d",
-				       vlan_id);
-		}
-
 		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
 			       HOSTAPD_LEVEL_DEBUG, "added new dynamic VLAN "
 			       "interface '%s'", vlan->ifname);
@@ -960,29 +951,12 @@ int ap_sta_bind_vlan(struct hostapd_data *hapd, struct sta_info *sta)
 			       sta->vlan_id);
 		ret = -1;
 		goto done;
-	} else if (vlan) {
-		if (vlan->dynamic_vlan > 0) {
-			vlan->dynamic_vlan++;
-			hostapd_logger(hapd, sta->addr,
-				       HOSTAPD_MODULE_IEEE80211,
-				       HOSTAPD_LEVEL_DEBUG, "updated existing "
-				       "dynamic VLAN interface '%s'", iface);
-		}
-
-		/*
-		 * Update encryption configuration for statically generated
-		 * VLAN interface. This is only used for static WEP
-		 * configuration for the case where hostapd did not yet know
-		 * which keys are to be used when the interface was added.
-		 */
-		if (vlan_setup_encryption_dyn(hapd, iface) != 0) {
-			hostapd_logger(hapd, sta->addr,
-				       HOSTAPD_MODULE_IEEE80211,
-				       HOSTAPD_LEVEL_DEBUG, "could not "
-				       "configure encryption for VLAN "
-				       "interface for vlan_id=%d",
-				       sta->vlan_id);
-		}
+	} else if (vlan && vlan->dynamic_vlan > 0) {
+		vlan->dynamic_vlan++;
+		hostapd_logger(hapd, sta->addr,
+			       HOSTAPD_MODULE_IEEE80211,
+			       HOSTAPD_LEVEL_DEBUG, "updated existing "
+			       "dynamic VLAN interface '%s'", iface);
 	}
 
 	/* ref counters have been increased, so mark the station */
