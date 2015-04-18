@@ -824,6 +824,9 @@ static int vlan_dynamic_add(struct hostapd_data *hapd,
 						   strerror(errno));
 					return -1;
 				}
+#ifdef CONFIG_FULL_DYNAMIC_VLAN
+				vlan_newlink(vlan->ifname, hapd);
+#endif /* CONFIG_FULL_DYNAMIC_VLAN */
 			}
 #ifdef CONFIG_FULL_DYNAMIC_VLAN
 			ifconfig_up(vlan->ifname);
