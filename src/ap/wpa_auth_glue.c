@@ -649,6 +649,15 @@ int hostapd_setup_wpa(struct hostapd_data *hapd)
 
 }
 
+int hostapd_setup_wpa_vlan(struct hostapd_data *hapd, int vlan_id)
+{
+	return wpa_auth_ensure_group(hapd->wpa_auth, vlan_id);
+}
+
+int hostapd_desetup_wpa_vlan(struct hostapd_data *hapd, int vlan_id)
+{
+	return wpa_auth_release_group(hapd->wpa_auth, vlan_id);
+}
 
 void hostapd_reconfig_wpa(struct hostapd_data *hapd)
 {

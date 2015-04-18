@@ -10,6 +10,8 @@
 #define WPA_AUTH_GLUE_H
 
 int hostapd_setup_wpa(struct hostapd_data *hapd);
+int hostapd_setup_wpa_vlan(struct hostapd_data *hapd, int vlan_id);
+int hostapd_desetup_wpa_vlan(struct hostapd_data *hapd, int vlan_id);
 void hostapd_reconfig_wpa(struct hostapd_data *hapd);
 void hostapd_deinit_wpa(struct hostapd_data *hapd);
 

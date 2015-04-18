@@ -23,6 +23,7 @@
 #include "ap_drv_ops.h"
 #include "vlan_init.h"
 #include "vlan_util.h"
+#include "wpa_auth_glue.h"
 
 
 #ifdef CONFIG_FULL_DYNAMIC_VLAN
@@ -34,6 +35,7 @@
 struct full_dynamic_vlan {
 	int s; /* socket on which to listen for new/removed interfaces. */
 };
+#endif /* CONFIG_FULL_DYNAMIC_VLAN */
 
 
 static int ifconfig_helper(const char *if_name, int up)
@@ -90,6 +92,7 @@ static int ifconfig_down(const char *if_name)
 }
 
 
+#ifdef CONFIG_FULL_DYNAMIC_VLAN
 /*
  * These are only available in recent linux headers (without the leading
  * underscore).
@@ -475,6 +478,54 @@ static int vlan_set_name_type(unsigned int name_type)
 #endif /* CONFIG_VLAN_NETLINK */
 
 
+static int vlan_if_add(struct hostapd_data *hapd, struct hostapd_vlan *vlan,
+		       int existsok)
+{
+	int ret;
+
+	if (!if_nametoindex(vlan->ifname))
+		ret = hostapd_vlan_if_add(hapd, vlan->ifname);
+	else if (!existsok)
+		return -1;
+	else
+		ret = 0;
+
+	if (ret)
+		return ret;
+
+	ifconfig_up(vlan->ifname); /* else wpa group will fail fatal */
+
+	if (hapd->wpa_auth)
+		ret = hostapd_setup_wpa_vlan(hapd, vlan->vlan_id);
+
+	if (ret == 0)
+		return ret;
+
+	wpa_printf(MSG_ERROR, "WPA initialization for vlan %d failed (%d)",
+		   vlan->vlan_id, ret);
+	if (hostapd_desetup_wpa_vlan(hapd, vlan->vlan_id))
+		wpa_printf(MSG_ERROR, "WPA deinit of %s failed", vlan->ifname);
+
+	/* group state machine setup failed */
+	if (hostapd_vlan_if_remove(hapd, vlan->ifname))
+		wpa_printf(MSG_ERROR, "Removal of %s failed", vlan->ifname);
+
+	return ret;
+}
+
+
+static int vlan_if_remove(struct hostapd_data *hapd, struct hostapd_vlan *vlan)
+{
+	int ret;
+	ret = hostapd_desetup_wpa_vlan(hapd, vlan->vlan_id);
+	if (ret)
+		wpa_printf(MSG_ERROR, "WPA deinitialization for vlan %d failed"
+			   " (%d)", vlan->vlan_id, ret);
+
+	return hostapd_vlan_if_remove(hapd, vlan->ifname);
+}
+
+
 static void vlan_newlink(char *ifname, struct hostapd_data *hapd)
 {
 	char vlan_ifname[IFNAMSIZ];
@@ -816,20 +867,14 @@ static int vlan_dynamic_add(struct hostapd_data *hapd,
 {
 	while (vlan) {
 		if (vlan->vlan_id != VLAN_ID_WILDCARD) {
-			if (hostapd_vlan_if_add(hapd, vlan->ifname)) {
-				if (errno != EEXIST) {
-					wpa_printf(MSG_ERROR, "VLAN: Could "
-						   "not add VLAN %s: %s",
-						   vlan->ifname,
-						   strerror(errno));
-					return -1;
-				}
-#ifdef CONFIG_FULL_DYNAMIC_VLAN
-				vlan_newlink(vlan->ifname, hapd);
-#endif /* CONFIG_FULL_DYNAMIC_VLAN */
+			if (vlan_if_add(hapd, vlan, 1)) {
+				wpa_printf(MSG_ERROR, "VLAN: Could not add "
+					   "VLAN %s: %s", vlan->ifname,
+					   strerror(errno));
+				return -1;
 			}
 #ifdef CONFIG_FULL_DYNAMIC_VLAN
-			ifconfig_up(vlan->ifname);
+			vlan_newlink(vlan->ifname, hapd);
 #endif /* CONFIG_FULL_DYNAMIC_VLAN */
 		}
 
@@ -849,7 +894,7 @@ static void vlan_dynamic_remove(struct hostapd_data *hapd,
 		next = vlan->next;
 
 		if (vlan->vlan_id != VLAN_ID_WILDCARD &&
-		    hostapd_vlan_if_remove(hapd, vlan->ifname)) {
+		    vlan_if_remove(hapd, vlan)) {
 			wpa_printf(MSG_ERROR, "VLAN: Could not remove VLAN "
 				   "iface: %s: %s",
 				   vlan->ifname, strerror(errno));
@@ -937,18 +982,16 @@ struct hostapd_vlan * vlan_add_dynamic(struct hostapd_data *hapd,
 	os_snprintf(n->ifname, sizeof(n->ifname), "%s%d%s", ifname, vlan_id,
 		    pos);
 
-	if (hostapd_vlan_if_add(hapd, n->ifname)) {
+	n->next = hapd->conf->vlan;
+	hapd->conf->vlan = n;
+
+	/* hapd->conf->vlan needs this new vlan here for wpa setup */
+	if (vlan_if_add(hapd, n, 0)) {
+		hapd->conf->vlan = n->next;
 		os_free(n);
 		n = NULL;
 		goto free_ifname;
 	}
-
-	n->next = hapd->conf->vlan;
-	hapd->conf->vlan = n;
-
-#ifdef CONFIG_FULL_DYNAMIC_VLAN
-	ifconfig_up(n->ifname);
-#endif /* CONFIG_FULL_DYNAMIC_VLAN */
 
 free_ifname:
 	os_free(ifname);
@@ -979,7 +1022,7 @@ int vlan_remove_dynamic(struct hostapd_data *hapd, int vlan_id)
 		return 1;
 
 	if (vlan->dynamic_vlan == 0)
-		hostapd_vlan_if_remove(hapd, vlan->ifname);
+		vlan_if_remove(hapd, vlan);
 
 	return 0;
 }
