@@ -105,6 +105,7 @@ struct hostapd_ssid {
 	int per_sta_vif;
 #ifdef CONFIG_FULL_DYNAMIC_VLAN
 	char *vlan_tagged_interface;
+	char *vlan_script;
 #endif /* CONFIG_FULL_DYNAMIC_VLAN */
 };
 

@@ -2716,6 +2716,9 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 	} else if (os_strcmp(buf, "vlan_tagged_interface") == 0) {
 		os_free(bss->ssid.vlan_tagged_interface);
 		bss->ssid.vlan_tagged_interface = os_strdup(pos);
+	} else if (os_strcmp(buf, "vlan_script") == 0) {
+		os_free(bss->ssid.vlan_script);
+		bss->ssid.vlan_script = os_strdup(pos);
 #endif /* CONFIG_FULL_DYNAMIC_VLAN */
 #endif /* CONFIG_NO_VLAN */
 	} else if (os_strcmp(buf, "ap_table_max_size") == 0) {
