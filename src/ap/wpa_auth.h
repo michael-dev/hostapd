@@ -13,6 +13,7 @@
 #include "common/eapol_common.h"
 #include "common/wpa_common.h"
 #include "common/ieee802_11_defs.h"
+#include "vlan.h"
 
 #define MAX_OWN_IE_OVERRIDE 256
 
@@ -75,6 +76,9 @@ struct ft_rrb_frame {
 #define FT_RRB_PAIRWISE      10 /* le16 */
 #define FT_RRB_EXPIRES_IN    11 /* le16 seconds */
 
+#define FT_RRB_VLAN_UNTAGGED 12 /* le16 */
+#define FT_RRB_VLAN_TAGGED   13 /* n times le16 */
+
 struct ft_rrbv1_tlv {
 	le16 type;
 	le16 len;
@@ -83,7 +87,7 @@ struct ft_rrbv1_tlv {
 
 /* session TLVs:
  *   required: [PMK_R1, PMK_R1_NAME, PAIRWISE]
- *   optional: EXPIRES_IN
+ *   optional: VLAN, EXPIRES_IN
  *
  * pull frame TLVs:
  *   required: NONCE, R0KH_ID, PMK_R0_NAME, R1KH_ID, S1KH_ID
@@ -226,6 +230,10 @@ struct wpa_auth_callbacks {
 			size_t data_len);
 #ifdef CONFIG_IEEE80211R
 	struct wpa_state_machine * (*add_sta)(void *ctx, const u8 *sta_addr);
+	int (*set_vlan)(void *ctx, const u8 *sta_addr,
+			struct vlan_description *vlan);
+	int (*get_vlan)(void *ctx, const u8 *sta_addr,
+			struct vlan_description *vlan);
 	int (*send_ft_action)(void *ctx, const u8 *dst,
 			      const u8 *data, size_t data_len);
 	int (*add_tspec)(void *ctx, const u8 *sta_addr, u8 *tspec_ie,
