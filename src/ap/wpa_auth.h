@@ -40,10 +40,11 @@ struct ft_rrb_frame {
 #define FT_PACKET_R0KH_R1KH_RESP 201
 #define FT_PACKET_R0KH_R1KH_PUSH 202
 
-#define FT_R0KH_R1KH_PULL_DATA_LEN 44
-#define FT_R0KH_R1KH_RESP_DATA_LEN 76
-#define FT_R0KH_R1KH_PUSH_DATA_LEN 88
 #define FT_R0KH_R1KH_PULL_NONCE_LEN 16
+#define FT_R0KH_R1KH_PULL_DATA_LEN (FT_R0KH_R1KH_PULL_NONCE_LEN + \
+				    WPA_PMK_NAME_LEN + FT_R1KH_ID_LEN + \
+				    ETH_ALEN)
+#define FT_R0KH_R1KH_PULL_PAD_LEN (8 - FT_R0KH_R1KH_PULL_DATA_LEN % 8)
 
 struct ft_r0kh_r1kh_pull_frame {
 	u8 frame_type; /* RSN_REMOTE_FRAME_TYPE_FT_RRB */
@@ -55,10 +56,14 @@ struct ft_r0kh_r1kh_pull_frame {
 	u8 pmk_r0_name[WPA_PMK_NAME_LEN];
 	u8 r1kh_id[FT_R1KH_ID_LEN];
 	u8 s1kh_id[ETH_ALEN];
-	u8 pad[4]; /* 8-octet boundary for AES key wrap */
+	u8 pad[FT_R0KH_R1KH_PULL_PAD_LEN]; /* 8-octet boundary for AES block */
 	u8 key_wrap_extra[8];
 } STRUCT_PACKED;
 
+#define FT_R0KH_R1KH_RESP_DATA_LEN (FT_R0KH_R1KH_PULL_NONCE_LEN + \
+				    FT_R1KH_ID_LEN + ETH_ALEN + PMK_LEN + \
+				    WPA_PMK_NAME_LEN + 2)
+#define FT_R0KH_R1KH_RESP_PAD_LEN (8 - FT_R0KH_R1KH_RESP_DATA_LEN % 8)
 struct ft_r0kh_r1kh_resp_frame {
 	u8 frame_type; /* RSN_REMOTE_FRAME_TYPE_FT_RRB */
 	u8 packet_type; /* FT_PACKET_R0KH_R1KH_RESP */
@@ -71,10 +76,14 @@ struct ft_r0kh_r1kh_resp_frame {
 	u8 pmk_r1[PMK_LEN];
 	u8 pmk_r1_name[WPA_PMK_NAME_LEN];
 	le16 pairwise;
-	u8 pad[2]; /* 8-octet boundary for AES key wrap */
+	u8 pad[FT_R0KH_R1KH_RESP_PAD_LEN]; /* 8-octet boundary for AES block */
 	u8 key_wrap_extra[8];
 } STRUCT_PACKED;
 
+#define FT_R0KH_R1KH_PUSH_DATA_LEN (4 + FT_R1KH_ID_LEN + ETH_ALEN + \
+				    WPA_PMK_NAME_LEN + PMK_LEN + \
+				    WPA_PMK_NAME_LEN + 2)
+#define FT_R0KH_R1KH_PUSH_PAD_LEN (8 - FT_R0KH_R1KH_PUSH_DATA_LEN % 8)
 struct ft_r0kh_r1kh_push_frame {
 	u8 frame_type; /* RSN_REMOTE_FRAME_TYPE_FT_RRB */
 	u8 packet_type; /* FT_PACKET_R0KH_R1KH_PUSH */
@@ -90,7 +99,7 @@ struct ft_r0kh_r1kh_push_frame {
 	u8 pmk_r1[PMK_LEN];
 	u8 pmk_r1_name[WPA_PMK_NAME_LEN];
 	le16 pairwise;
-	u8 pad[6]; /* 8-octet boundary for AES key wrap */
+	u8 pad[FT_R0KH_R1KH_PUSH_PAD_LEN]; /* 8-octet boundary for AES block */
 	u8 key_wrap_extra[8];
 } STRUCT_PACKED;
 
