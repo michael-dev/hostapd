@@ -546,6 +546,104 @@ hostapd_wpa_auth_add_sta(void *ctx, const u8 *sta_addr)
 }
 
 
+static void hostapd_wpa_vlan_to_ft(struct ft_vlan *ft_vlan,
+				   struct vlan_description vlan_desc)
+{
+	int i,j;
+
+	os_memset(ft_vlan, 0, sizeof(*ft_vlan));
+	ft_vlan->untagged = host_to_le16(vlan_desc.untagged);
+	for (i=0, j=0;
+	     i < FT_MAX_NUM_TAGGED_VLAN && j < MAX_NUM_TAGGED_VLAN;
+	     j++) {
+		if (!vlan_desc.tagged[j])
+			break;
+		ft_vlan->tagged[i] = host_to_le16(vlan_desc.tagged[j]);
+		i++;
+	}
+}
+
+
+static int hostapd_wpa_ft_to_vlan(struct hostapd_data *hapd,
+				  struct vlan_description *vlan_desc,
+				  struct ft_vlan ft_vlan)
+{
+	int i,j;
+
+	/* convert ft_vlan into vlan_description */
+	os_memset(vlan_desc, 0, sizeof(*vlan_desc));
+	vlan_desc->untagged = le_to_host16(ft_vlan.untagged);
+	for (i=0, j=0;
+	     i < FT_MAX_NUM_TAGGED_VLAN && j < MAX_NUM_TAGGED_VLAN;
+	     i++) {
+		if (!ft_vlan.tagged[i])
+			break;
+		vlan_desc->tagged[j] = le_to_host16(ft_vlan.tagged[j]);
+		j++;
+	}
+	vlan_desc->notempty = vlan_desc->untagged || vlan_desc->tagged[0];
+
+	/* fail early so that does not get connected if invalid vlan */
+	if (vlan_desc->notempty &&
+	    !hostapd_vlan_id_valid(hapd->conf->vlan, *vlan_desc))
+		return -1;
+	return 0;
+}
+
+
+static int hostapd_wpa_auth_set_vlan(void *ctx, const u8 *sta_addr,
+				     struct ft_vlan ft_vlan)
+{
+	struct hostapd_data *hapd = ctx;
+	struct sta_info *sta;
+	struct vlan_description vlan_desc;
+
+	sta = ap_get_sta(hapd, sta_addr);
+	if (sta == NULL)
+		return -1;
+
+	if (!sta->wpa_sm)
+		return -1;
+
+	if (hostapd_wpa_ft_to_vlan(hapd, &vlan_desc, ft_vlan) < 0) {
+		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
+			       HOSTAPD_LEVEL_INFO, "Invalid VLAN "
+			       "%d%s received from FT",
+			       vlan_desc.untagged,
+			       vlan_desc.tagged[0] ? "+" : "");
+		return -1;
+	}
+
+	if (ap_sta_set_vlan(hapd, sta, vlan_desc) < 0)
+		return -1;
+	/* configure wpa_group for GTK but ignore error due to driver not
+	 * knowing this sta */
+	ap_sta_bind_vlan(hapd, sta);
+
+	if (sta->vlan_id)
+		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
+			       HOSTAPD_LEVEL_INFO, "VLAN ID %d", sta->vlan_id);
+
+	return 0;
+}
+
+
+static int
+hostapd_wpa_auth_get_vlan(void *ctx, const u8 *sta_addr,
+			  struct ft_vlan *ft_vlan)
+{
+	struct hostapd_data *hapd = ctx;
+	struct sta_info *sta;
+
+	sta = ap_get_sta(hapd, sta_addr);
+	if (sta == NULL)
+		return -1;
+
+	hostapd_wpa_vlan_to_ft(ft_vlan, sta->vlan_desc);
+	return 0;
+}
+
+
 static void hostapd_rrb_receive(void *ctx, const u8 *src_addr, const u8 *buf,
 				size_t len)
 {
@@ -602,6 +700,8 @@ int hostapd_setup_wpa(struct hostapd_data *hapd)
 #ifdef CONFIG_IEEE80211R
 	cb.send_ft_action = hostapd_wpa_auth_send_ft_action;
 	cb.add_sta = hostapd_wpa_auth_add_sta;
+	cb.set_vlan = hostapd_wpa_auth_set_vlan;
+	cb.get_vlan = hostapd_wpa_auth_get_vlan;
 	cb.add_tspec = hostapd_wpa_auth_add_tspec;
 #endif /* CONFIG_IEEE80211R */
 	hapd->wpa_auth = wpa_init(hapd->own_addr, &_conf, &cb);

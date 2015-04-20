@@ -60,6 +60,26 @@ wpa_ft_add_sta(struct wpa_authenticator *wpa_auth, const u8 *sta_addr)
 }
 
 
+static int
+wpa_ft_set_vlan(struct wpa_authenticator *wpa_auth, const u8 *sta_addr,
+		struct ft_vlan vlan)
+{
+	if (wpa_auth->cb.set_vlan == NULL)
+		return -1;
+	return wpa_auth->cb.set_vlan(wpa_auth->cb.ctx, sta_addr, vlan);
+}
+
+
+static int
+wpa_ft_get_vlan(struct wpa_authenticator *wpa_auth, const u8 *sta_addr,
+		struct ft_vlan *vlan)
+{
+	if (wpa_auth->cb.get_vlan == NULL)
+		return -1;
+	return wpa_auth->cb.get_vlan(wpa_auth->cb.ctx, sta_addr, vlan);
+}
+
+
 static int wpa_ft_add_tspec(struct wpa_authenticator *wpa_auth,
 			    const u8 *sta_addr,
 			    u8 *tspec_ie, size_t tspec_ielen)
@@ -148,7 +168,8 @@ struct wpa_ft_pmk_r0_sa {
 	u8 pmk_r0_name[WPA_PMK_NAME_LEN];
 	u8 spa[ETH_ALEN];
 	int pairwise; /* Pairwise cipher suite, WPA_CIPHER_* */
-	/* TODO: expiration, identity, radius_class, EAP type, VLAN ID */
+	struct ft_vlan vlan;
+	/* TODO: expiration, identity, radius_class, EAP type */
 	int pmk_r1_pushed;
 };
 
@@ -158,7 +179,8 @@ struct wpa_ft_pmk_r1_sa {
 	u8 pmk_r1_name[WPA_PMK_NAME_LEN];
 	u8 spa[ETH_ALEN];
 	int pairwise; /* Pairwise cipher suite, WPA_CIPHER_* */
-	/* TODO: expiration, identity, radius_class, EAP type, VLAN ID */
+	struct ft_vlan vlan;
+	/* TODO: expiration, identity, radius_class, EAP type */
 };
 
 struct wpa_ft_pmk_cache {
@@ -203,7 +225,8 @@ void wpa_ft_pmk_cache_deinit(struct wpa_ft_pmk_cache *cache)
 
 static int wpa_ft_store_pmk_r0(struct wpa_authenticator *wpa_auth,
 			       const u8 *spa, const u8 *pmk_r0,
-			       const u8 *pmk_r0_name, int pairwise)
+			       const u8 *pmk_r0_name, int pairwise,
+			       const struct ft_vlan vlan)
 {
 	struct wpa_ft_pmk_cache *cache = wpa_auth->ft_pmk_cache;
 	struct wpa_ft_pmk_r0_sa *r0;
@@ -218,6 +241,7 @@ static int wpa_ft_store_pmk_r0(struct wpa_authenticator *wpa_auth,
 	os_memcpy(r0->pmk_r0_name, pmk_r0_name, WPA_PMK_NAME_LEN);
 	os_memcpy(r0->spa, spa, ETH_ALEN);
 	r0->pairwise = pairwise;
+	os_memcpy(&r0->vlan, &vlan, FT_VLAN_DATA_LEN);
 
 	r0->next = cache->pmk_r0;
 	cache->pmk_r0 = r0;
@@ -228,7 +252,8 @@ static int wpa_ft_store_pmk_r0(struct wpa_authenticator *wpa_auth,
 
 static int wpa_ft_fetch_pmk_r0(struct wpa_authenticator *wpa_auth,
 			       const u8 *spa, const u8 *pmk_r0_name,
-			       u8 *pmk_r0, int *pairwise)
+			       u8 *pmk_r0, int *pairwise,
+			       struct ft_vlan *vlan)
 {
 	struct wpa_ft_pmk_cache *cache = wpa_auth->ft_pmk_cache;
 	struct wpa_ft_pmk_r0_sa *r0;
@@ -241,6 +266,8 @@ static int wpa_ft_fetch_pmk_r0(struct wpa_authenticator *wpa_auth,
 			os_memcpy(pmk_r0, r0->pmk_r0, PMK_LEN);
 			if (pairwise)
 				*pairwise = r0->pairwise;
+			if (vlan)
+				os_memcpy(vlan, &r0->vlan, FT_VLAN_DATA_LEN);
 			return 0;
 		}
 
@@ -253,7 +280,8 @@ static int wpa_ft_fetch_pmk_r0(struct wpa_authenticator *wpa_auth,
 
 static int wpa_ft_store_pmk_r1(struct wpa_authenticator *wpa_auth,
 			       const u8 *spa, const u8 *pmk_r1,
-			       const u8 *pmk_r1_name, int pairwise)
+			       const u8 *pmk_r1_name, int pairwise,
+			       const struct ft_vlan vlan)
 {
 	struct wpa_ft_pmk_cache *cache = wpa_auth->ft_pmk_cache;
 	struct wpa_ft_pmk_r1_sa *r1;
@@ -268,6 +296,7 @@ static int wpa_ft_store_pmk_r1(struct wpa_authenticator *wpa_auth,
 	os_memcpy(r1->pmk_r1_name, pmk_r1_name, WPA_PMK_NAME_LEN);
 	os_memcpy(r1->spa, spa, ETH_ALEN);
 	r1->pairwise = pairwise;
+	os_memcpy(&r1->vlan, &vlan, FT_VLAN_DATA_LEN);
 
 	r1->next = cache->pmk_r1;
 	cache->pmk_r1 = r1;
@@ -278,7 +307,8 @@ static int wpa_ft_store_pmk_r1(struct wpa_authenticator *wpa_auth,
 
 static int wpa_ft_fetch_pmk_r1(struct wpa_authenticator *wpa_auth,
 			       const u8 *spa, const u8 *pmk_r1_name,
-			       u8 *pmk_r1, int *pairwise)
+			       u8 *pmk_r1, int *pairwise,
+			       struct ft_vlan *vlan)
 {
 	struct wpa_ft_pmk_cache *cache = wpa_auth->ft_pmk_cache;
 	struct wpa_ft_pmk_r1_sa *r1;
@@ -291,6 +321,8 @@ static int wpa_ft_fetch_pmk_r1(struct wpa_authenticator *wpa_auth,
 			os_memcpy(pmk_r1, r1->pmk_r1, PMK_LEN);
 			if (pairwise)
 				*pairwise = r1->pairwise;
+			if (vlan)
+				os_memcpy(vlan, &r1->vlan, FT_VLAN_DATA_LEN);
 			return 0;
 		}
 
@@ -373,10 +405,17 @@ int wpa_auth_derive_ptk_ft(struct wpa_state_machine *sm, const u8 *pmk,
 	const u8 *r1kh = sm->wpa_auth->conf.r1_key_holder;
 	const u8 *ssid = sm->wpa_auth->conf.ssid;
 	size_t ssid_len = sm->wpa_auth->conf.ssid_len;
+	struct ft_vlan vlan;
 
 	if (sm->xxkey_len == 0) {
 		wpa_printf(MSG_DEBUG, "FT: XXKey not available for key "
 			   "derivation");
+		return -1;
+	}
+
+	if (wpa_ft_get_vlan(sm->wpa_auth, sm->addr, &vlan) < 0) {
+		wpa_printf(MSG_DEBUG, "FT: vlan not available for STA " MACSTR,
+			   MAC2STR(sm->addr));
 		return -1;
 	}
 
@@ -385,7 +424,7 @@ int wpa_auth_derive_ptk_ft(struct wpa_state_machine *sm, const u8 *pmk,
 	wpa_hexdump_key(MSG_DEBUG, "FT: PMK-R0", pmk_r0, PMK_LEN);
 	wpa_hexdump(MSG_DEBUG, "FT: PMKR0Name", pmk_r0_name, WPA_PMK_NAME_LEN);
 	wpa_ft_store_pmk_r0(sm->wpa_auth, sm->addr, pmk_r0, pmk_r0_name,
-			    sm->pairwise);
+			    sm->pairwise, vlan);
 
 	wpa_derive_pmk_r1(pmk_r0, pmk_r0_name, r1kh, sm->addr,
 			  pmk_r1, sm->pmk_r1_name);
@@ -393,7 +432,7 @@ int wpa_auth_derive_ptk_ft(struct wpa_state_machine *sm, const u8 *pmk,
 	wpa_hexdump(MSG_DEBUG, "FT: PMKR1Name", sm->pmk_r1_name,
 		    WPA_PMK_NAME_LEN);
 	wpa_ft_store_pmk_r1(sm->wpa_auth, sm->addr, pmk_r1, sm->pmk_r1_name,
-			    sm->pairwise);
+			    sm->pairwise, vlan);
 
 	return wpa_pmk_r1_to_ptk(pmk_r1, sm->SNonce, sm->ANonce, sm->addr,
 				 sm->wpa_auth->addr, sm->pmk_r1_name,
@@ -809,6 +848,7 @@ static int wpa_ft_process_auth_req(struct wpa_state_machine *sm,
 	int ret;
 	u8 *pos, *end;
 	int pairwise;
+	struct ft_vlan vlan;
 
 	*resp_ies = NULL;
 	*resp_ies_len = 0;
@@ -865,7 +905,7 @@ static int wpa_ft_process_auth_req(struct wpa_state_machine *sm,
 		    pmk_r1_name, WPA_PMK_NAME_LEN);
 
 	if (wpa_ft_fetch_pmk_r1(sm->wpa_auth, sm->addr, pmk_r1_name, pmk_r1,
-		    &pairwise) < 0) {
+		    &pairwise, &vlan) < 0) {
 		if (wpa_ft_pull_pmk_r1(sm, ies, ies_len, parse.rsn_pmkid) < 0) {
 			wpa_printf(MSG_DEBUG, "FT: Did not have matching "
 				   "PMK-R1 and unknown R0KH-ID");
@@ -899,6 +939,11 @@ static int wpa_ft_process_auth_req(struct wpa_state_machine *sm,
 	sm->pairwise = pairwise;
 	sm->PTK_valid = TRUE;
 	wpa_ft_install_ptk(sm);
+
+	if (wpa_ft_set_vlan(sm->wpa_auth, sm->addr, vlan) < 0) {
+		wpa_printf(MSG_DEBUG, "FT: Failed to configure VLAN");
+		return WLAN_STATUS_UNSPECIFIED_FAILURE;
+	}
 
 	buflen = 2 + sizeof(struct rsn_mdie) + 2 + sizeof(struct rsn_ftie) +
 		2 + FT_R1KH_ID_LEN + 200;
@@ -1317,6 +1362,7 @@ static int wpa_ft_rrb_rx_pull(struct wpa_authenticator *wpa_auth,
 	struct ft_r0kh_r1kh_resp_frame resp, r;
 	u8 pmk_r0[PMK_LEN];
 	int pairwise;
+	struct ft_vlan vlan;
 
 	wpa_printf(MSG_DEBUG, "FT: Received PMK-R1 pull");
 
@@ -1368,7 +1414,7 @@ static int wpa_ft_rrb_rx_pull(struct wpa_authenticator *wpa_auth,
 	os_memcpy(r.r1kh_id, f.r1kh_id, FT_R1KH_ID_LEN);
 	os_memcpy(r.s1kh_id, f.s1kh_id, ETH_ALEN);
 	if (wpa_ft_fetch_pmk_r0(wpa_auth, f.s1kh_id, f.pmk_r0_name, pmk_r0,
-				&pairwise) < 0) {
+				&pairwise, &vlan) < 0) {
 		wpa_printf(MSG_DEBUG, "FT: No matching PMKR0Name found for "
 			   "PMK-R1 pull");
 		return -1;
@@ -1380,6 +1426,7 @@ static int wpa_ft_rrb_rx_pull(struct wpa_authenticator *wpa_auth,
 	wpa_hexdump(MSG_DEBUG, "FT: PMKR1Name", r.pmk_r1_name,
 		    WPA_PMK_NAME_LEN);
 	r.pairwise = host_to_le16(pairwise);
+	os_memcpy(&r.vlan, &vlan, FT_VLAN_DATA_LEN);
 	os_memset(r.pad, 0, sizeof(r.pad));
 
 	if (aes_wrap(r1kh->key, sizeof(r1kh->key),
@@ -1500,9 +1547,10 @@ static int wpa_ft_rrb_rx_resp(struct wpa_authenticator *wpa_auth,
 			f.pmk_r1, PMK_LEN);
 	wpa_hexdump(MSG_DEBUG, "FT: PMK-R1 pull - PMKR1Name",
 			f.pmk_r1_name, WPA_PMK_NAME_LEN);
+	wpa_printf(MSG_DEBUG, "FT: PMK-R1 pull - vlan %d%s", le_to_host16(f.vlan.untagged), f.vlan.tagged[0] ? "+" : "");
 
 	res = wpa_ft_store_pmk_r1(wpa_auth, f.s1kh_id, f.pmk_r1, f.pmk_r1_name,
-				  pairwise);
+				  pairwise, f.vlan);
 	wpa_printf(MSG_DEBUG, "FT: Look for pending pull request");
 	wpa_auth_for_each_sta(wpa_auth, ft_pull_resp_cb, &f);
 	os_memset(f.pmk_r1, 0, PMK_LEN);
@@ -1582,9 +1630,10 @@ static int wpa_ft_rrb_rx_push(struct wpa_authenticator *wpa_auth,
 			f.pmk_r1, PMK_LEN);
 	wpa_hexdump(MSG_DEBUG, "FT: PMK-R1 push - PMKR1Name",
 			f.pmk_r1_name, WPA_PMK_NAME_LEN);
+	wpa_printf(MSG_DEBUG, "FT: PMK-R1 push - vlan %d%s", le_to_host16(f.vlan.untagged), f.vlan.tagged[0] ? "+" : "");
 
 	wpa_ft_store_pmk_r1(wpa_auth, f.s1kh_id, f.pmk_r1, f.pmk_r1_name,
-			    pairwise);
+			    pairwise, f.vlan);
 	os_memset(f.pmk_r1, 0, PMK_LEN);
 
 	return 0;
@@ -1746,6 +1795,7 @@ static void wpa_ft_generate_pmk_r1(struct wpa_authenticator *wpa_auth,
 	os_get_time(&now);
 	WPA_PUT_LE32(f.timestamp, now.sec);
 	f.pairwise = host_to_le16(pairwise);
+	f.vlan = pmk_r0->vlan;
 	os_memset(f.pad, 0, sizeof(f.pad));
 	plain = ((const u8 *) &f) + offsetof(struct ft_r0kh_r1kh_push_frame,
 					     timestamp);
