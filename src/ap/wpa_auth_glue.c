@@ -31,7 +31,9 @@
 #include "pmksa_cache_auth.h"
 #include "wpa_auth.h"
 #include "wpa_auth_glue.h"
-
+#ifdef CONFIG_IEEE80211R_AP
+#include "drivers/linux_ioctl.h"
+#endif /* CONFIG_IEEE80211R_AP */
 
 static void hostapd_wpa_auth_conf(struct hostapd_bss_config *conf,
 				  struct hostapd_config *iconf,
@@ -1335,8 +1337,25 @@ int hostapd_setup_wpa(struct hostapd_data *hapd)
 	    wpa_key_mgmt_ft(hapd->conf->wpa_key_mgmt)) {
 		const char *ft_iface;
 
-		ft_iface = hapd->conf->bridge[0] ? hapd->conf->bridge :
-			   hapd->conf->iface;
+		ft_iface = hapd->conf->iface;
+		if (hapd->conf->bridge[0])
+			ft_iface = hapd->conf->bridge;
+		if (hapd->conf->ft_bridge[0]) {
+			ft_iface = hapd->conf->ft_bridge;
+#ifdef HAVE_LINUX_IOCTL_NEWLINK
+			int sock = linux_ioctl_socket();
+			if (sock < 0 ||
+			    linux_br_fdb_add(sock, ft_iface,
+					     hapd->own_addr) < 0)
+				wpa_printf(MSG_ERROR, "Failed to add bssid to "
+					   "ft_bridge %s", ft_iface);
+			if (sock >= 0)
+				linux_ioctl_close(sock);
+#else
+			wpa_printf(MSG_ERROR, "Missing CONFIG_LINUX_IOCTL_NEWLINK - bssid not added to "
+				   "ft_bridge %s", ft_iface);
+#endif /* HAVE_LINUX_IOCTL_NEWLINK */
+		}
 		hapd->l2 = l2_packet_init(ft_iface, NULL, ETH_P_RRB,
 					  hostapd_rrb_receive, hapd, 1);
 		if (hapd->l2 == NULL &&
@@ -1396,6 +1415,18 @@ void hostapd_deinit_wpa(struct hostapd_data *hapd)
 	hostapd_wpa_ft_rrb_rx_later(hapd, NULL); /* flush without delivering */
 	eloop_cancel_timeout(hostapd_oui_deliver_later, hapd, ELOOP_ALL_CTX);
 	hostapd_oui_deliver_later(hapd, NULL); /* flush without delivering */
+#ifdef HAVE_LINUX_IOCTL_NEWLINK
+	if (hapd->conf->ft_bridge[0]) {
+		int sock = linux_ioctl_socket();
+		const char* ifname = hapd->conf->ft_bridge;
+		if (sock < 0 ||
+		    linux_br_fdb_del(sock, ifname, hapd->own_addr) < 0)
+			wpa_printf(MSG_ERROR, "Failed to remove bssid to "
+				   "ft_bridge %s", ifname);
+		if (sock >= 0)
+			linux_ioctl_close(sock);
+	}
+#endif /* HAVE_LINUX_IOCTL_NEWLINK */
 	l2_packet_deinit(hapd->l2);
 	hapd->l2 = NULL;
 	hostapd_wpa_unregister_ft_oui(hapd);
