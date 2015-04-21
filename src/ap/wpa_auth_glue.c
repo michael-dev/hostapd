@@ -25,6 +25,13 @@
 #include "ap_config.h"
 #include "wpa_auth.h"
 #include "wpa_auth_glue.h"
+#include <stdlib.h>
+
+#ifdef CONFIG_IEEE80211R
+#include "bridge.h"
+#include "dummy.h"
+#include "ifconfig.h"
+#endif /* CONFIG_IEEE80211R */
 
 
 static void hostapd_wpa_auth_conf(struct hostapd_bss_config *conf,
@@ -678,6 +685,10 @@ int hostapd_setup_wpa(struct hostapd_data *hapd)
 	struct wpa_auth_callbacks cb;
 	const u8 *wpa_ie;
 	size_t wpa_ie_len;
+#ifdef CONFIG_IEEE80211R
+	const char* ft_iface;
+	char dummy_iface[IFNAMSIZ+1];
+#endif /* CONFIG_IEEE80211R */
 
 	hostapd_wpa_auth_conf(hapd->conf, hapd->iconf, &_conf);
 	if (hapd->iface->drv_flags & WPA_DRIVER_FLAGS_EAPOL_TX_STATUS)
@@ -734,9 +745,25 @@ int hostapd_setup_wpa(struct hostapd_data *hapd)
 
 #ifdef CONFIG_IEEE80211R
 	if (!hostapd_drv_none(hapd)) {
-		hapd->l2 = l2_packet_init(hapd->conf->bridge[0] ?
-					  hapd->conf->bridge :
-					  hapd->conf->iface, NULL, ETH_P_RRB,
+		ft_iface = hapd->conf->iface;
+		if (hapd->conf->bridge[0])
+			ft_iface = hapd->conf->bridge;
+		if (hapd->conf->ft_bridge[0]) {
+			ft_iface = hapd->conf->ft_bridge;
+#ifdef CONFIG_LIBNL3_ROUTE
+			snprintf(dummy_iface, sizeof(dummy_iface), "ft%s",
+				 hapd->conf->iface);
+			if (dummy_add(dummy_iface, hapd->own_addr) < 0 ||
+			    ifconfig_up(dummy_iface) < 0 ||
+			    br_addif(ft_iface, dummy_iface) < 0)
+				wpa_printf(MSG_ERROR, "Failed to add bssid to "
+					   "ft_bridge %s", ft_iface);
+#else
+			wpa_printf(MSG_ERROR, "Missing libnl3 - bssid not added"
+				   " to ft_bridge %s", ft_iface);
+#endif /* CONFIG_LIBNL3_ROUTE */
+		}
+		hapd->l2 = l2_packet_init(ft_iface, NULL, ETH_P_RRB,
 					  hostapd_rrb_receive, hapd, 1);
 		if (hapd->l2 == NULL &&
 		    (hapd->driver == NULL ||
@@ -772,6 +799,10 @@ void hostapd_reconfig_wpa(struct hostapd_data *hapd)
 
 void hostapd_deinit_wpa(struct hostapd_data *hapd)
 {
+#ifdef CONFIG_IEEE80211R
+	char dummy_iface[IFNAMSIZ+1];
+#endif /* CONFIG_IEEE80211R */
+
 	ieee80211_tkip_countermeasures_deinit(hapd);
 	rsn_preauth_iface_deinit(hapd);
 	if (hapd->wpa_auth) {
@@ -793,6 +824,15 @@ void hostapd_deinit_wpa(struct hostapd_data *hapd)
 	ieee802_1x_deinit(hapd);
 
 #ifdef CONFIG_IEEE80211R
+#ifdef CONFIG_LIBNL3_ROUTE
+	if (hapd->conf->ft_bridge[0]) {
+		snprintf(dummy_iface, sizeof(dummy_iface), "ft%s",
+			 hapd->conf->iface);
+		ifconfig_down(dummy_iface);
+		br_delif(hapd->conf->ft_bridge, dummy_iface);
+		dummy_del(dummy_iface);
+	}
+#endif /* CONFIG_LIBNL3_ROUTE */
 	l2_packet_deinit(hapd->l2);
 	hapd->l2 = NULL;
 #endif /* CONFIG_IEEE80211R */

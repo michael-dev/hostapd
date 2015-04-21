@@ -152,6 +152,10 @@ else
 OBJS += ../src/ap/accounting.o
 endif
 
+ifdef CONFIG_80211R
+NEED_BRIDGE=y
+NEED_IFCONFIG=y
+endif
 ifndef CONFIG_NO_VLAN
 NEED_BRIDGE=y
 NEED_IFCONFIG=y
@@ -230,6 +234,7 @@ endif
 ifdef CONFIG_IEEE80211R
 CFLAGS += -DCONFIG_IEEE80211R
 OBJS += ../src/ap/wpa_auth_ft.o
+OBJS += ../src/ap/dummy.o
 NEED_SHA256=y
 NEED_AES_OMAC1=y
 NEED_AES_UNWRAP=y
