@@ -239,6 +239,12 @@ struct hostapd_bss_config {
 	char bridge[IFNAMSIZ + 1];
 	char vlan_bridge[IFNAMSIZ + 1];
 	char wds_bridge[IFNAMSIZ + 1];
+#ifdef CONFIG_IEEE80211R_AP
+	char ft_iface[IFNAMSIZ + 1];
+#ifdef CONFIG_IEEE80211R_MACVLAN
+	char ft_macvlan[IFNAMSIZ + 1];
+#endif /* CONFIG_IEEE80211R_MACVLAN */
+#endif /* CONFIG_IEEE80211R_AP */
 
 	enum hostapd_logger_level logger_syslog_level, logger_stdout_level;
 
