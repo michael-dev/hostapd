@@ -1944,6 +1944,18 @@ struct wpa_driver_ops {
 			 int noack);
 
 	/**
+	 * send_mlme_ifidx - Send management frame from MLME
+	 * @priv: Private driver interface data
+	 * @data: IEEE 802.11 management frame with IEEE 802.11 header
+	 * @data_len: Size of the management frame
+	 * @noack: Do not wait for this frame to be acked (disable retries)
+	 * @ifidx: AP_VLAN interface idx or zero if no vlan assigned
+	 * Returns: 0 on success, -1 on failure
+	 */
+	int (*send_mlme_ifidx)(void *priv, const u8 *data, size_t data_len,
+			 int noack, int ifidx);
+
+	/**
 	 * update_ft_ies - Update FT (IEEE 802.11r) IEs
 	 * @priv: Private driver interface data
 	 * @md: Mobility domain (2 octets) (also included inside ies)

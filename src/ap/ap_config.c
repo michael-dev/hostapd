@@ -18,6 +18,8 @@
 #include "wpa_auth.h"
 #include "sta_info.h"
 #include "ap_config.h"
+#include "hostapd.h"
+#include <net/if.h>
 
 
 static void hostapd_config_free_vlan(struct hostapd_bss_config *bss)
@@ -676,6 +678,29 @@ const char * hostapd_get_vlan_id_ifname(struct hostapd_vlan *vlan, int vlan_id)
 		v = v->next;
 	}
 	return NULL;
+}
+
+
+int hostapd_get_vlan_id_ifidx(struct hostapd_vlan *vlan, int vlan_id)
+{
+	const char* ifname = hostapd_get_vlan_id_ifname(vlan, vlan_id);
+	if (!ifname)
+		return 0;
+	return if_nametoindex(ifname);
+}
+
+
+int hostapd_get_sta_ifidx(struct hostapd_data *hapd, const u8* addr)
+{
+	struct sta_info *sta;
+	if (!hapd)
+		return 0;
+	sta = ap_get_sta(hapd, addr);
+	if (!sta)
+		return 0;
+	if (!sta->vlan_id_bound)
+		return 0;
+	return hostapd_get_vlan_id_ifidx(hapd->conf->vlan, sta->vlan_id_bound);
 }
 
 

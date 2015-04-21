@@ -496,6 +496,7 @@ static int hostapd_wpa_auth_send_ft_action(void *ctx, const u8 *dst,
 	struct ieee80211_mgmt *m;
 	size_t mlen;
 	struct sta_info *sta;
+	int ifidx;
 
 	sta = ap_get_sta(hapd, dst);
 	if (sta == NULL || sta->wpa_sm == NULL)
@@ -512,7 +513,9 @@ static int hostapd_wpa_auth_send_ft_action(void *ctx, const u8 *dst,
 	os_memcpy(m->bssid, hapd->own_addr, ETH_ALEN);
 	os_memcpy(&m->u, data, data_len);
 
-	res = hostapd_drv_send_mlme(hapd, (u8 *) m, mlen, 0);
+	ifidx = hostapd_get_sta_ifidx(hapd, dst);
+
+	res = hostapd_drv_send_mlme_ifidx(hapd, (u8 *) m, mlen, 0, ifidx);
 	os_free(m);
 	return res;
 }

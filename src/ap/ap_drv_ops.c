@@ -631,6 +631,24 @@ int hostapd_drv_send_mlme(struct hostapd_data *hapd,
 }
 
 
+int hostapd_drv_send_mlme_ifidx(struct hostapd_data *hapd,
+				const void *msg, size_t len, int noack,
+				int ifidx)
+{
+	if (hapd->driver && hapd->driver->send_mlme_ifidx)
+		return hapd->driver->send_mlme_ifidx(hapd->drv_priv, msg, len,
+						     noack, ifidx);
+
+	/* Some drivers might not have send_mlme_ifidx implemented nor need it.
+	 * Using send_mlme will work for them - at least in the non-VLAN case.
+	 */
+	if (hapd->driver && hapd->driver->send_mlme)
+		return hapd->driver->send_mlme(hapd->drv_priv, msg, len, noack);
+
+	return 0;
+}
+
+
 int hostapd_drv_sta_deauth(struct hostapd_data *hapd,
 			   const u8 *addr, int reason)
 {
