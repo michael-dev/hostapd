@@ -668,7 +668,7 @@ int hostapd_drv_send_mlme(struct hostapd_data *hapd,
 	if (!hapd->driver || !hapd->driver->send_mlme || !hapd->drv_priv)
 		return 0;
 	return hapd->driver->send_mlme(hapd->drv_priv, msg, len, noack, 0,
-				       NULL, 0);
+				       NULL, 0, 0);
 }
 
 
@@ -679,7 +679,18 @@ int hostapd_drv_send_mlme_csa(struct hostapd_data *hapd,
 	if (hapd->driver == NULL || hapd->driver->send_mlme == NULL)
 		return 0;
 	return hapd->driver->send_mlme(hapd->drv_priv, msg, len, noack, 0,
-				       csa_offs, csa_offs_len);
+				       csa_offs, csa_offs_len, 0);
+}
+
+
+int hostapd_drv_send_mlme_ifidx(struct hostapd_data *hapd,
+				const void *msg, size_t len, int noack,
+				int ifidx)
+{
+	if (hapd->driver == NULL || hapd->driver->send_mlme == NULL)
+		return 0;
+	return hapd->driver->send_mlme(hapd->drv_priv, msg, len, noack, 0,
+				       NULL, 0, ifidx);
 }
 
 

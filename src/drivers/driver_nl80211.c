@@ -178,7 +178,8 @@ static int nl80211_send_frame_cmd(struct i802_bss *bss,
 				  unsigned int freq, unsigned int wait,
 				  const u8 *buf, size_t buf_len, u64 *cookie,
 				  int no_cck, int no_ack, int offchanok,
-				  const u16 *csa_offs, size_t csa_offs_len);
+				  const u16 *csa_offs, size_t csa_offs_len,
+				  int ifidx);
 static int wpa_driver_nl80211_probe_req_report(struct i802_bss *bss,
 					       int report);
 
@@ -459,15 +460,19 @@ void * nl80211_cmd(struct wpa_driver_nl80211_data *drv,
 }
 
 
-static int nl80211_set_iface_id(struct nl_msg *msg, struct i802_bss *bss)
+static int nl80211_set_iface_id(struct nl_msg *msg, struct i802_bss *bss,
+				int ifidx)
 {
+	if (ifidx)
+		return nla_put_u32(msg, NL80211_ATTR_IFINDEX, ifidx);
 	if (bss->wdev_id_set)
 		return nla_put_u64(msg, NL80211_ATTR_WDEV, bss->wdev_id);
 	return nla_put_u32(msg, NL80211_ATTR_IFINDEX, bss->ifindex);
 }
 
 
-struct nl_msg * nl80211_cmd_msg(struct i802_bss *bss, int flags, uint8_t cmd)
+struct nl_msg * nl80211_cmd_msg_ifidx(struct i802_bss *bss, int flags,
+				      uint8_t cmd, int ifidx)
 {
 	struct nl_msg *msg;
 
@@ -476,7 +481,7 @@ struct nl_msg * nl80211_cmd_msg(struct i802_bss *bss, int flags, uint8_t cmd)
 		return NULL;
 
 	if (!nl80211_cmd(bss->drv, msg, flags, cmd) ||
-	    nl80211_set_iface_id(msg, bss) < 0) {
+	    nl80211_set_iface_id(msg, bss, ifidx) < 0) {
 		nlmsg_free(msg);
 		return NULL;
 	}
@@ -484,6 +489,11 @@ struct nl_msg * nl80211_cmd_msg(struct i802_bss *bss, int flags, uint8_t cmd)
 	return msg;
 }
 
+
+struct nl_msg * nl80211_cmd_msg(struct i802_bss *bss, int flags, uint8_t cmd)
+{
+	return nl80211_cmd_msg_ifidx(bss, flags, cmd, 0);
+}
 
 static struct nl_msg *
 nl80211_ifindex_msg(struct wpa_driver_nl80211_data *drv, int ifindex,
@@ -3359,7 +3369,7 @@ static int wpa_driver_nl80211_send_frame(struct i802_bss *bss,
 					 unsigned int freq, int no_cck,
 					 int offchanok, unsigned int wait_time,
 					 const u16 *csa_offs,
-					 size_t csa_offs_len)
+					 size_t csa_offs_len, int ifidx)
 {
 	struct wpa_driver_nl80211_data *drv = bss->drv;
 	u64 cookie;
@@ -3386,7 +3396,7 @@ static int wpa_driver_nl80211_send_frame(struct i802_bss *bss,
 	wpa_printf(MSG_DEBUG, "nl80211: send_frame -> send_frame_cmd");
 	res = nl80211_send_frame_cmd(bss, freq, wait_time, data, len,
 				     &cookie, no_cck, noack, offchanok,
-				     csa_offs, csa_offs_len);
+				     csa_offs, csa_offs_len, ifidx);
 	if (res == 0 && !noack) {
 		const struct ieee80211_mgmt *mgmt;
 		u16 fc;
@@ -3414,7 +3424,7 @@ static int wpa_driver_nl80211_send_mlme(struct i802_bss *bss, const u8 *data,
 					int offchanok,
 					unsigned int wait_time,
 					const u16 *csa_offs,
-					size_t csa_offs_len)
+					size_t csa_offs_len, int ifidx)
 {
 	struct wpa_driver_nl80211_data *drv = bss->drv;
 	struct ieee80211_mgmt *mgmt;
@@ -3444,7 +3454,7 @@ static int wpa_driver_nl80211_send_mlme(struct i802_bss *bss, const u8 *data,
 		}
 		return nl80211_send_frame_cmd(bss, freq, 0,
 					      data, data_len, NULL, 1, noack,
-					      1, csa_offs, csa_offs_len);
+					      1, csa_offs, csa_offs_len, ifidx);
 	}
 
 	if (drv->device_ap_sme && is_ap_interface(drv->nlmode)) {
@@ -3459,7 +3469,7 @@ static int wpa_driver_nl80211_send_mlme(struct i802_bss *bss, const u8 *data,
 					      data, data_len,
 					      &drv->send_action_cookie,
 					      no_cck, noack, offchanok,
-					      csa_offs, csa_offs_len);
+					      csa_offs, csa_offs_len, ifidx);
 	}
 
 	if (WLAN_FC_GET_TYPE(fc) == WLAN_FC_TYPE_MGMT &&
@@ -3480,7 +3490,7 @@ static int wpa_driver_nl80211_send_mlme(struct i802_bss *bss, const u8 *data,
 	return wpa_driver_nl80211_send_frame(bss, data, data_len, encrypt,
 					     noack, freq, no_cck, offchanok,
 					     wait_time, csa_offs,
-					     csa_offs_len);
+					     csa_offs_len, ifidx);
 }
 
 
@@ -4817,7 +4827,7 @@ static int wpa_driver_nl80211_hapd_send_eapol(
 	memcpy(pos, data, data_len);
 
 	res = wpa_driver_nl80211_send_frame(bss, (u8 *) hdr, len, encrypt, 0,
-					    0, 0, 0, 0, NULL, 0);
+					    0, 0, 0, 0, NULL, 0, 0);
 	if (res < 0) {
 		wpa_printf(MSG_ERROR, "i802_send_eapol - packet len: %lu - "
 			   "failed: %d (%s)",
@@ -6133,7 +6143,7 @@ static int i802_sta_deauth(void *priv, const u8 *own_addr, const u8 *addr,
 	return wpa_driver_nl80211_send_mlme(bss, (u8 *) &mgmt,
 					    IEEE80211_HDRLEN +
 					    sizeof(mgmt.u.deauth), 0, 0, 0, 0,
-					    0, NULL, 0);
+					    0, NULL, 0, 0);
 }
 
 
@@ -6160,7 +6170,7 @@ static int i802_sta_disassoc(void *priv, const u8 *own_addr, const u8 *addr,
 	return wpa_driver_nl80211_send_mlme(bss, (u8 *) &mgmt,
 					    IEEE80211_HDRLEN +
 					    sizeof(mgmt.u.disassoc), 0, 0, 0, 0,
-					    0, NULL, 0);
+					    0, NULL, 0, 0);
 }
 
 
@@ -6864,7 +6874,7 @@ static int nl80211_send_frame_cmd(struct i802_bss *bss,
 				  const u8 *buf, size_t buf_len,
 				  u64 *cookie_out, int no_cck, int no_ack,
 				  int offchanok, const u16 *csa_offs,
-				  size_t csa_offs_len)
+				  size_t csa_offs_len, int ifidx)
 {
 	struct wpa_driver_nl80211_data *drv = bss->drv;
 	struct nl_msg *msg;
@@ -6876,7 +6886,7 @@ static int nl80211_send_frame_cmd(struct i802_bss *bss,
 		   freq, wait, no_cck, no_ack, offchanok);
 	wpa_hexdump(MSG_MSGDUMP, "CMD_FRAME", buf, buf_len);
 
-	if (!(msg = nl80211_cmd_msg(bss, 0, NL80211_CMD_FRAME)) ||
+	if (!(msg = nl80211_cmd_msg_ifidx(bss, 0, NL80211_CMD_FRAME, ifidx)) ||
 	    (freq && nla_put_u32(msg, NL80211_ATTR_WIPHY_FREQ, freq)) ||
 	    (wait && nla_put_u32(msg, NL80211_ATTR_DURATION, wait)) ||
 	    (offchanok && ((drv->capa.flags & WPA_DRIVER_FLAGS_OFFCHANNEL_TX) ||
@@ -6967,12 +6977,12 @@ static int wpa_driver_nl80211_send_action(struct i802_bss *bss,
 	     !drv->use_monitor))
 		ret = wpa_driver_nl80211_send_mlme(bss, buf, 24 + data_len,
 						   0, freq, no_cck, 1,
-						   wait_time, NULL, 0);
+						   wait_time, NULL, 0, 0);
 	else
 		ret = nl80211_send_frame_cmd(bss, freq, wait_time, buf,
 					     24 + data_len,
 					     &drv->send_action_cookie,
-					     no_cck, 0, 1, NULL, 0);
+					     no_cck, 0, 1, NULL, 0, 0);
 
 	os_free(buf);
 	return ret;
@@ -7345,7 +7355,7 @@ static int nl80211_send_frame(void *priv, const u8 *data, size_t data_len,
 {
 	struct i802_bss *bss = priv;
 	return wpa_driver_nl80211_send_frame(bss, data, data_len, encrypt, 0,
-					     0, 0, 0, 0, NULL, 0);
+					     0, 0, 0, 0, NULL, 0, 0);
 }
 
 
@@ -7784,7 +7794,7 @@ static void nl80211_send_null_frame(struct i802_bss *bss, const u8 *own_addr,
 	os_memcpy(nulldata.hdr.IEEE80211_SA_FROMDS, own_addr, ETH_ALEN);
 
 	if (wpa_driver_nl80211_send_mlme(bss, (u8 *) &nulldata, size, 0, 0, 0,
-					 0, 0, NULL, 0) < 0)
+					 0, 0, NULL, 0, 0) < 0)
 		wpa_printf(MSG_DEBUG, "nl80211_send_null_frame: Failed to "
 			   "send poll frame");
 }
@@ -8110,12 +8120,13 @@ static int driver_nl80211_if_remove(void *priv, enum wpa_driver_if_type type,
 static int driver_nl80211_send_mlme(void *priv, const u8 *data,
 				    size_t data_len, int noack,
 				    unsigned int freq,
-				    const u16 *csa_offs, size_t csa_offs_len)
+				    const u16 *csa_offs, size_t csa_offs_len,
+				    int ifidx)
 {
 	struct i802_bss *bss = priv;
 	return wpa_driver_nl80211_send_mlme(bss, data, data_len, noack,
 					    freq, 0, 0, 0, csa_offs,
-					    csa_offs_len);
+					    csa_offs_len, ifidx);
 }
 
 
