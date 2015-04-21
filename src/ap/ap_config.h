@@ -783,6 +783,8 @@ struct hostapd_config {
 #endif /* CONFIG_IEEE80211AX */
 };
 
+struct hostapd_data;
+
 
 int hostapd_mac_comp(const void *a, const void *b);
 struct hostapd_config * hostapd_config_defaults(void);
@@ -803,6 +805,8 @@ int hostapd_vlan_valid(struct hostapd_vlan *vlan,
 		       struct vlan_description *vlan_desc);
 const char * hostapd_get_vlan_id_ifname(struct hostapd_vlan *vlan,
 					int vlan_id);
+int hostapd_get_vlan_id_ifidx(struct hostapd_vlan *vlan, int vlan_id);
+int hostapd_get_sta_ifidx(struct hostapd_data *hapd, const u8 *addr);
 struct hostapd_radius_attr *
 hostapd_config_get_radius_attr(struct hostapd_radius_attr *attr, u8 type);
 int hostapd_config_check(struct hostapd_config *conf, int full_config);
