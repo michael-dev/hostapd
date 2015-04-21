@@ -296,6 +296,10 @@ endif
 ifdef CONFIG_IEEE80211R
 CFLAGS += -DCONFIG_IEEE80211R -DCONFIG_IEEE80211R_AP
 OBJS += ../src/ap/wpa_auth_ft.o
+ifdef CONFIG_IEEE80211R_MACVLAN
+CFLAGS += -DCONFIG_IEEE80211R_MACVLAN
+NEED_MACVLAN=y
+endif
 NEED_SHA256=y
 NEED_AES_OMAC1=y
 NEED_AES_UNWRAP=y
@@ -935,6 +939,19 @@ ifdef NEED_RC4
 ifdef CONFIG_INTERNAL_RC4
 ifndef CONFIG_NO_RC4
 OBJS += ../src/crypto/rc4.o
+endif
+endif
+endif
+
+ifdef NEED_MACVLAN
+ifdef CONFIG_LIBNL32
+ifdef CONFIG_LIBNL3_ROUTE
+OBJS += ../src/ap/macvlan.o
+LIBS += -lnl-3
+LIBS += -lnl-genl-3
+LIBS += -lnl-route-3
+CFLAGS += -DCONFIG_LIBNL20 -I/usr/include/libnl3
+CFLAGS += -DCONFIG_LIBNL3_ROUTE
 endif
 endif
 endif
