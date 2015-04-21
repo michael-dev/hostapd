@@ -91,6 +91,9 @@ int hostapd_drv_send_mlme(struct hostapd_data *hapd,
 int hostapd_drv_send_mlme_csa(struct hostapd_data *hapd,
 			      const void *msg, size_t len, int noack,
 			      const u16 *csa_offs, size_t csa_offs_len);
+int hostapd_drv_send_mlme_ifidx(struct hostapd_data *hapd,
+				const void *msg, size_t len, int noack,
+				int ifidx);
 int hostapd_drv_sta_deauth(struct hostapd_data *hapd,
 			   const u8 *addr, int reason);
 int hostapd_drv_sta_disassoc(struct hostapd_data *hapd,
