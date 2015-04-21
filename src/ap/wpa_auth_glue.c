@@ -29,6 +29,12 @@
 #include "ap_config.h"
 #include "wpa_auth.h"
 #include "wpa_auth_glue.h"
+#include <stdlib.h>
+
+#ifdef CONFIG_IEEE80211R_MACVLAN
+#include "macvlan.h"
+#include "vlan_ifconfig.h"
+#endif /* CONFIG_IEEE80211R_MACVLAN */
 
 
 static void hostapd_wpa_auth_conf(struct hostapd_bss_config *conf,
@@ -910,8 +916,27 @@ int hostapd_setup_wpa(struct hostapd_data *hapd)
 #ifdef CONFIG_IEEE80211R
 	if (!hostapd_drv_none(hapd) &&
 	    wpa_key_mgmt_ft(hapd->conf->wpa_key_mgmt)) {
-		ft_iface = hapd->conf->bridge[0] ? hapd->conf->bridge :
-			   hapd->conf->iface;
+		ft_iface = hapd->conf->iface;
+		if (hapd->conf->bridge[0])
+			ft_iface = hapd->conf->bridge;
+		if (hapd->conf->ft_iface[0]) {
+			ft_iface = hapd->conf->ft_iface;
+#ifdef CONFIG_IEEE80211R_MACVLAN
+			snprintf(hapd->conf->ft_macvlan,
+				 sizeof(hapd->conf->ft_macvlan),
+				 "ft%s", hapd->conf->iface);
+			if (macvlan_add(hapd->conf->ft_macvlan,
+					hapd->own_addr,	ft_iface) < 0 ||
+			    ifconfig_up(hapd->conf->ft_macvlan) < 0) {
+				wpa_printf(MSG_ERROR, "Failed to add bssid to "
+					   "ft_iface %s", ft_iface);
+				hapd->conf->ft_macvlan[0] = '\0';
+			} else
+				ft_iface = hapd->conf->ft_macvlan;
+		} else {
+			hapd->conf->ft_macvlan[0] = '\0';
+#endif /* CONFIG_IEEE80211R_MACVLAN */
+		}
 		hapd->l2 = l2_packet_init(ft_iface, NULL, ETH_P_RRB,
 					  hostapd_rrb_receive, hapd, 1);
 		if (hapd->l2 == NULL &&
@@ -981,6 +1006,12 @@ void hostapd_deinit_wpa(struct hostapd_data *hapd)
 	ieee802_1x_deinit(hapd);
 
 #ifdef CONFIG_IEEE80211R
+#ifdef CONFIG_IEEE80211R_MACVLAN
+	if (hapd->conf->ft_macvlan[0]) {
+		ifconfig_down(hapd->conf->ft_macvlan);
+		macvlan_del(hapd->conf->ft_macvlan);
+	}
+#endif /* CONFIG_IEEE80211R_MACVLAN */
 	l2_packet_deinit(hapd->l2);
 	hapd->l2 = NULL;
 	eth_p_oui_unregister(hapd->oui_ft_pull);

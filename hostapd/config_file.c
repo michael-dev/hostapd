@@ -2031,6 +2031,10 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		os_strlcpy(bss->vlan_bridge, pos, sizeof(bss->vlan_bridge));
 	} else if (os_strcmp(buf, "wds_bridge") == 0) {
 		os_strlcpy(bss->wds_bridge, pos, sizeof(bss->wds_bridge));
+#ifdef CONFIG_IEEE80211R
+	} else if (os_strcmp(buf, "ft_iface") == 0) {
+		os_strlcpy(bss->ft_iface, pos, sizeof(bss->ft_iface));
+#endif /* CONFIG_IEEE80211R */
 	} else if (os_strcmp(buf, "driver") == 0) {
 		int j;
 		/* clear to get error below if setting is invalid */
