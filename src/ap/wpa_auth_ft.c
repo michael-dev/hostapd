@@ -54,6 +54,17 @@ static int wpa_ft_action_send(struct wpa_authenticator *wpa_auth,
 }
 
 
+static inline const u8 * wpa_ft_get_psk(struct wpa_authenticator *wpa_auth,
+					const u8 *addr, const u8 *p2p_dev_addr,
+					const u8 *prev_psk)
+{
+	if (wpa_auth->cb.get_psk == NULL)
+		return NULL;
+	return wpa_auth->cb.get_psk(wpa_auth->cb.ctx, addr, p2p_dev_addr,
+				    prev_psk);
+}
+
+
 static int
 wpa_ft_add_sta(struct wpa_authenticator *wpa_auth, const u8 *sta_addr,
 	       struct wpa_state_machine **sm,
@@ -509,16 +520,20 @@ int wpa_auth_derive_ptk_ft(struct wpa_state_machine *sm, const u8 *pmk,
 			  r0kh, r0kh_len, sm->addr, pmk_r0, pmk_r0_name);
 	wpa_hexdump_key(MSG_DEBUG, "FT: PMK-R0", pmk_r0, PMK_LEN);
 	wpa_hexdump(MSG_DEBUG, "FT: PMKR0Name", pmk_r0_name, WPA_PMK_NAME_LEN);
-	wpa_ft_store_pmk_r0(sm->wpa_auth, sm->addr, pmk_r0, pmk_r0_name,
-			    sm->pairwise, vlan, expiresIn);
+	if (!wpa_key_mgmt_ft_psk(sm->wpa_key_mgmt))
+		wpa_ft_store_pmk_r0(sm->wpa_auth, sm->addr, pmk_r0,
+				    pmk_r0_name, sm->pairwise, vlan,
+				    expiresIn);
 
 	wpa_derive_pmk_r1(pmk_r0, pmk_r0_name, r1kh, sm->addr,
 			  pmk_r1, sm->pmk_r1_name);
 	wpa_hexdump_key(MSG_DEBUG, "FT: PMK-R1", pmk_r1, PMK_LEN);
 	wpa_hexdump(MSG_DEBUG, "FT: PMKR1Name", sm->pmk_r1_name,
 		    WPA_PMK_NAME_LEN);
-	wpa_ft_store_pmk_r1(sm->wpa_auth, sm->addr, pmk_r1, sm->pmk_r1_name,
-			    sm->pairwise, vlan, expiresIn);
+	if (!wpa_key_mgmt_ft_psk(sm->wpa_key_mgmt))
+		wpa_ft_store_pmk_r1(sm->wpa_auth, sm->addr, pmk_r1,
+				    sm->pmk_r1_name, sm->pairwise, vlan,
+				    expiresIn);
 
 	return wpa_pmk_r1_to_ptk(pmk_r1, sm->SNonce, sm->ANonce, sm->addr,
 				 sm->wpa_auth->addr, sm->pmk_r1_name,
@@ -920,6 +935,97 @@ void wpa_ft_install_ptk(struct wpa_state_machine *sm)
 }
 
 
+/* Derive PMK-R1 from PSK, check all available PSK
+ */
+static int wpa_ft_psk_pmk_r1(struct wpa_state_machine *sm,
+			     const u8 *req_pmk_r1_name,
+			     u8 *out_pmk_r1, int *out_pairwise,
+			     struct ft_vlan *out_vlan)
+{
+	const u8 *pmk = NULL;
+	u8 pmk_r0[PMK_LEN], pmk_r0_name[WPA_PMK_NAME_LEN];
+	u8 pmk_r1[PMK_LEN], pmk_r1_name[WPA_PMK_NAME_LEN];
+	struct wpa_authenticator *wpa_auth = sm->wpa_auth;
+	const u8 *mdid = wpa_auth->conf.mobility_domain;
+	const u8 *r0kh = sm->r0kh_id;
+	size_t r0kh_len = sm->r0kh_id_len;
+	const u8 *r1kh = wpa_auth->conf.r1_key_holder;
+	const u8 *ssid = wpa_auth->conf.ssid;
+	size_t ssid_len = wpa_auth->conf.ssid_len;
+	int pairwise;
+
+	pairwise = sm->pairwise;
+
+	for (;;) {
+		pmk = wpa_ft_get_psk(wpa_auth, sm->addr, sm->p2p_dev_addr,
+				     pmk);
+		if (pmk == NULL)
+			break;
+
+		wpa_derive_pmk_r0(pmk, PMK_LEN, ssid, ssid_len, mdid,
+				  r0kh, r0kh_len, sm->addr, pmk_r0, pmk_r0_name);
+		wpa_derive_pmk_r1(pmk_r0, pmk_r0_name, r1kh, sm->addr,
+				  pmk_r1, pmk_r1_name);
+		if (os_memcmp_const(pmk_r1_name, req_pmk_r1_name,
+				    WPA_PMK_NAME_LEN) == 0) {
+			/* we found a PSK that matches the request pmk_r1_name */
+			wpa_printf(MSG_DEBUG, "FT: found PSK to generate "
+					      "PMK_R1 locally");
+			os_memcpy(out_pmk_r1, pmk_r1, PMK_LEN);
+			if (out_pairwise)
+				*out_pairwise = pairwise;
+			if (out_vlan &&
+			    wpa_ft_get_vlan(sm->wpa_auth, sm->addr,
+					    out_vlan) < 0) {
+				wpa_printf(MSG_DEBUG, "FT: vlan not available for STA " MACSTR,
+					   MAC2STR(sm->addr));
+				return -1;
+			}
+			return 0;
+		}
+	}
+
+	wpa_printf(MSG_DEBUG, "FT: did not find PSK to generate PMK_R1 locally");
+	return -1;
+}
+
+/* Detect the configuration the station asked for.
+ * Required to detect FT-PSK and pairwise cipher. */
+static int wpa_ft_set_keymgmt(struct wpa_state_machine *sm,
+			      struct wpa_ft_ies *parse)
+{
+	int key_mgmt, ciphers;
+
+	if (sm->wpa_key_mgmt)
+		return 0;
+
+	key_mgmt = parse->key_mgmt & sm->wpa_auth->conf.wpa_key_mgmt;
+	if (!key_mgmt) {
+		wpa_printf(MSG_DEBUG, "FT: Invalid WPA key mgmt (0x%x) from "
+			   MACSTR, parse->key_mgmt, MAC2STR(sm->addr));
+		return -1;
+	}
+	if (key_mgmt & WPA_KEY_MGMT_FT_IEEE8021X)
+		sm->wpa_key_mgmt = WPA_KEY_MGMT_FT_IEEE8021X;
+	else if (key_mgmt & WPA_KEY_MGMT_FT_PSK)
+		sm->wpa_key_mgmt = WPA_KEY_MGMT_FT_PSK;
+	if (parse->wpa_proto == WPA_PROTO_RSN)
+		ciphers = parse->pairwise_cipher & sm->wpa_auth->conf.rsn_pairwise;
+	else
+		ciphers = parse->pairwise_cipher & sm->wpa_auth->conf.wpa_pairwise;
+	if (!ciphers) {
+		wpa_printf(MSG_DEBUG, "Invalid %s pairwise cipher (0x%x) "
+			   "from " MACSTR,
+			   parse->wpa_proto == WPA_PROTO_RSN ? "RSN" : "WPA",
+			   parse->pairwise_cipher, MAC2STR(sm->addr));
+		return -1;
+	}
+	sm->pairwise = wpa_pick_pairwise_cipher(ciphers, 0);
+
+	return 0;
+}
+
+
 static int wpa_ft_process_auth_req(struct wpa_state_machine *sm,
 				   const u8 *ies, size_t ies_len,
 				   u8 **resp_ies, size_t *resp_ies_len)
@@ -982,6 +1088,9 @@ static int wpa_ft_process_auth_req(struct wpa_state_machine *sm,
 		return WLAN_STATUS_INVALID_PMKID;
 	}
 
+	if (wpa_ft_set_keymgmt(sm, &parse) < 0)
+		return WLAN_STATUS_UNSPECIFIED_FAILURE;
+
 	wpa_hexdump(MSG_DEBUG, "FT: Requested PMKR0Name",
 		    parse.rsn_pmkid, WPA_PMK_NAME_LEN);
 	wpa_derive_pmk_r1_name(parse.rsn_pmkid,
@@ -990,6 +1099,11 @@ static int wpa_ft_process_auth_req(struct wpa_state_machine *sm,
 	wpa_hexdump(MSG_DEBUG, "FT: Derived requested PMKR1Name",
 		    pmk_r1_name, WPA_PMK_NAME_LEN);
 
+	if (wpa_key_mgmt_ft_psk(sm->wpa_key_mgmt)) {
+		if (wpa_ft_psk_pmk_r1(sm, pmk_r1_name, pmk_r1, &pairwise,
+				       &vlan) < 0)
+			return WLAN_STATUS_INVALID_PMKID;
+	} else
 	if (wpa_ft_fetch_pmk_r1(sm->wpa_auth, sm->addr, pmk_r1_name, pmk_r1,
 		    &pairwise, &vlan) < 0) {
 		if (wpa_ft_pull_pmk_r1(sm, ies, ies_len, parse.rsn_pmkid) < 0) {
