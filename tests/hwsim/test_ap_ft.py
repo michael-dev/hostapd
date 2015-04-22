@@ -111,24 +111,32 @@ def ft_params2_r0kh_mismatch(rsn=True, ssid=None, passphrase=None):
 def run_roams(dev, apdev, hapd0, hapd1, ssid, passphrase, over_ds=False,
               sae=False, eap=False, fail_test=False, roams=1,
               pairwise_cipher="CCMP", group_cipher="TKIP CCMP", ptk_rekey="0",
-              test_connectivity=True, eap_identity="gpsk user", conndev=False):
+              test_connectivity=True, eap_identity="gpsk user", conndev=False,
+	      forceInitialConnectToFirstAP = False):
     logger.info("Connect to first AP")
+
+    copts = {}
+    copts["proto"] = "WPA2"
+    copts["ieee80211w"] = "1"
+    copts["scan_freq"] = "2412"
+    copts["pairwise"] = pairwise_cipher
+    copts["group"]  = group_cipher
+    copts["wpa_ptk_rekey"] = ptk_rekey
     if eap:
-        dev.connect(ssid, key_mgmt="FT-EAP", proto="WPA2", ieee80211w="1",
-                    eap="GPSK", identity=eap_identity,
-                    password="abcdefghijklmnop0123456789abcdef",
-                    scan_freq="2412",
-                    pairwise=pairwise_cipher, group=group_cipher,
-                    wpa_ptk_rekey=ptk_rekey)
+        copts["key_mgmt"] = "FT-EAP"
+        copts["eap"] = "GPSK"
+        copts["identity"] = eap_identity
+        copts["password"] = "abcdefghijklmnop0123456789abcdef"
     else:
         if sae:
-            key_mgmt="FT-SAE"
+            copts["key_mgmt"] = "FT-SAE"
         else:
-            key_mgmt="FT-PSK"
-        dev.connect(ssid, psk=passphrase, key_mgmt=key_mgmt, proto="WPA2",
-                    ieee80211w="1", scan_freq="2412",
-                    pairwise=pairwise_cipher, group=group_cipher,
-                    wpa_ptk_rekey=ptk_rekey)
+            copts["key_mgmt"] = "FT-PSK"
+        copts["psk"] = passphrase
+    if forceInitialConnectToFirstAP:
+        copts["bssid"] = apdev[0]['bssid']
+    dev.connect(ssid, **copts)
+
     if dev.get_status_field('bssid') == apdev[0]['bssid']:
         ap1 = apdev[0]
         ap2 = apdev[1]
@@ -212,6 +220,65 @@ def test_ap_ft_local_key_gen(dev, apdev):
     if "[WPA2-FT/PSK-CCMP]" not in dev[0].request("SCAN_RESULTS"):
         raise Exception("Scan results missing RSN element info")
 
+def test_ap_ft_vlan(dev, apdev):
+    """WPA2-PSK-FT AP w VLAN"""
+    ssid = "test-ft"
+    passphrase="12345678"
+
+    params = ft_params1(ssid=ssid, passphrase=passphrase)
+    params['dynamic_vlan'] = "1";
+    params['accept_mac_file'] = "hostapd.accept";
+    hapd0 = hostapd.add_ap(apdev[0]['ifname'], params)
+
+    params = ft_params2(ssid=ssid, passphrase=passphrase)
+    params['dynamic_vlan'] = "1";
+    params['accept_mac_file'] = "hostapd.accept";
+    hapd1 = hostapd.add_ap(apdev[1]['ifname'], params)
+
+    run_roams(dev[0], apdev, hapd0, hapd1, ssid, passphrase, conndev="brvlan1")
+    if "[WPA2-FT/PSK-CCMP]" not in dev[0].request("SCAN_RESULTS"):
+        raise Exception("Scan results missing RSN element info")
+
+def test_ap_ft_vlan_disconnected(dev, apdev):
+    """WPA2-PSK-FT AP w VLAN"""
+    ssid = "test-ft"
+    passphrase="12345678"
+
+    params = ft_params1a(ssid=ssid, passphrase=passphrase)
+    params['dynamic_vlan'] = "1";
+    params['accept_mac_file'] = "hostapd.accept";
+    params['ft_psk_generate_local'] = "1";
+    hapd0 = hostapd.add_ap(apdev[0]['ifname'], params)
+
+    params = ft_params2a(ssid=ssid, passphrase=passphrase)
+    params['dynamic_vlan'] = "1";
+    params['accept_mac_file'] = "hostapd.accept";
+    params['ft_psk_generate_local'] = "1";
+    hapd1 = hostapd.add_ap(apdev[1]['ifname'], params)
+
+    run_roams(dev[0], apdev, hapd0, hapd1, ssid, passphrase, conndev="brvlan1")
+    if "[WPA2-FT/PSK-CCMP]" not in dev[0].request("SCAN_RESULTS"):
+        raise Exception("Scan results missing RSN element info")
+
+def test_ap_ft_vlan_2(dev, apdev):
+    """WPA2-PSK-FT AP w VLAN and dest-AP does not have VLAN info locally"""
+    ssid = "test-ft"
+    passphrase="12345678"
+
+    params = ft_params1(ssid=ssid, passphrase=passphrase)
+    params['dynamic_vlan'] = "1";
+    params['accept_mac_file'] = "hostapd.accept";
+    hapd0 = hostapd.add_ap(apdev[0]['ifname'], params)
+
+    params = ft_params2(ssid=ssid, passphrase=passphrase)
+    params['dynamic_vlan'] = "1";
+    hapd1 = hostapd.add_ap(apdev[1]['ifname'], params)
+
+    run_roams(dev[0], apdev, hapd0, hapd1, ssid, passphrase, conndev="brvlan1",
+	      forceInitialConnectToFirstAP = True)
+    if "[WPA2-FT/PSK-CCMP]" not in dev[0].request("SCAN_RESULTS"):
+        raise Exception("Scan results missing RSN element info")
+
 def test_ap_ft_many(dev, apdev):
     """WPA2-PSK-FT AP multiple times"""
     ssid = "test-ft"
@@ -223,6 +290,23 @@ def test_ap_ft_many(dev, apdev):
     hapd1 = hostapd.add_ap(apdev[1], params)
 
     run_roams(dev[0], apdev, hapd0, hapd1, ssid, passphrase, roams=50)
+
+def test_ap_ft_many_vlan(dev, apdev):
+    """WPA2-PSK-FT AP w VLAN"""
+    ssid = "test-ft"
+    passphrase="12345678"
+
+    params = ft_params1(ssid=ssid, passphrase=passphrase)
+    params['dynamic_vlan'] = "1";
+    params['accept_mac_file'] = "hostapd.accept";
+    hapd0 = hostapd.add_ap(apdev[0]['ifname'], params)
+
+    params = ft_params2(ssid=ssid, passphrase=passphrase)
+    params['dynamic_vlan'] = "1";
+    params['accept_mac_file'] = "hostapd.accept";
+    hapd1 = hostapd.add_ap(apdev[1]['ifname'], params)
+
+    run_roams(dev[0], apdev, hapd0, hapd1, ssid, passphrase, roams=50, conndev="brvlan1")
 
 def test_ap_ft_mixed(dev, apdev):
     """WPA2-PSK-FT mixed-mode AP"""
@@ -283,6 +367,24 @@ def test_ap_ft_over_ds_disabled(dev, apdev):
     run_roams(dev[0], apdev, hapd0, hapd1, ssid, passphrase, over_ds=True,
               fail_test=True)
 
+def test_ap_ft_vlan_over_ds(dev, apdev):
+    """WPA2-PSK-FT AP over DS w VLAN"""
+    ssid = "test-ft"
+    passphrase="12345678"
+
+    params = ft_params1(ssid=ssid, passphrase=passphrase)
+    params['dynamic_vlan'] = "1";
+    params['accept_mac_file'] = "hostapd.accept";
+    hapd0 = hostapd.add_ap(apdev[0]['ifname'], params)
+    params = ft_params2(ssid=ssid, passphrase=passphrase)
+    params['dynamic_vlan'] = "1";
+    params['accept_mac_file'] = "hostapd.accept";
+    hapd1 = hostapd.add_ap(apdev[1]['ifname'], params)
+
+    run_roams(dev[0], apdev, hapd0, hapd1, ssid, passphrase, over_ds=True, conndev="brvlan1")
+    check_mib(dev[0], [ ("dot11RSNAAuthenticationSuiteRequested", "00-0f-ac-4"),
+                        ("dot11RSNAAuthenticationSuiteSelected", "00-0f-ac-4") ])
+
 def test_ap_ft_over_ds_many(dev, apdev):
     """WPA2-PSK-FT AP over DS multiple times"""
     ssid = "test-ft"
@@ -295,6 +397,23 @@ def test_ap_ft_over_ds_many(dev, apdev):
 
     run_roams(dev[0], apdev, hapd0, hapd1, ssid, passphrase, over_ds=True,
               roams=50)
+
+def test_ap_ft_vlan_over_ds_many(dev, apdev):
+    """WPA2-PSK-FT AP over DS multiple times"""
+    ssid = "test-ft"
+    passphrase="12345678"
+
+    params = ft_params1(ssid=ssid, passphrase=passphrase)
+    params['dynamic_vlan'] = "1";
+    params['accept_mac_file'] = "hostapd.accept";
+    hapd0 = hostapd.add_ap(apdev[0]['ifname'], params)
+    params = ft_params2(ssid=ssid, passphrase=passphrase)
+    params['dynamic_vlan'] = "1";
+    params['accept_mac_file'] = "hostapd.accept";
+    hapd1 = hostapd.add_ap(apdev[1]['ifname'], params)
+
+    run_roams(dev[0], apdev, hapd0, hapd1, ssid, passphrase, over_ds=True,
+              roams=50, conndev="brvlan1")
 
 @remote_compatible
 def test_ap_ft_over_ds_unknown_target(dev, apdev):
@@ -437,6 +556,24 @@ def test_ap_ft_over_ds_pull(dev, apdev):
     hapd1 = hostapd.add_ap(apdev[1], params)
 
     run_roams(dev[0], apdev, hapd0, hapd1, ssid, passphrase, over_ds=True)
+
+def test_ap_ft_over_ds_pull_vlan(dev, apdev):
+    """WPA2-PSK-FT AP over DS (pull PMK) w VLAN"""
+    ssid = "test-ft"
+    passphrase="12345678"
+
+    params = ft_params1(ssid=ssid, passphrase=passphrase)
+    params["pmk_r1_push"] = "0"
+    params['dynamic_vlan'] = "1";
+    params['accept_mac_file'] = "hostapd.accept";
+    hapd0 = hostapd.add_ap(apdev[0]['ifname'], params)
+    params = ft_params2(ssid=ssid, passphrase=passphrase)
+    params["pmk_r1_push"] = "0"
+    params['dynamic_vlan'] = "1";
+    params['accept_mac_file'] = "hostapd.accept";
+    hapd1 = hostapd.add_ap(apdev[1]['ifname'], params)
+
+    run_roams(dev[0], apdev, hapd0, hapd1, ssid, passphrase, over_ds=True, conndev="brvlan1")
 
 def test_ap_ft_sae(dev, apdev):
     """WPA2-PSK-FT-SAE AP"""
