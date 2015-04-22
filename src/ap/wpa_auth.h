@@ -70,7 +70,7 @@ struct ft_r0kh_r1kh_pull_frame {
 
 #define FT_R0KH_R1KH_RESP_DATA_LEN (FT_R0KH_R1KH_PULL_NONCE_LEN + \
 				    FT_R1KH_ID_LEN + ETH_ALEN + PMK_LEN + \
-				    WPA_PMK_NAME_LEN + FT_VLAN_DATA_LEN + 2)
+				    WPA_PMK_NAME_LEN + FT_VLAN_DATA_LEN + 2 + 2)
 #define FT_R0KH_R1KH_RESP_PAD_LEN (8 - FT_R0KH_R1KH_RESP_DATA_LEN % 8)
 struct ft_r0kh_r1kh_resp_frame {
 	u8 frame_type; /* RSN_REMOTE_FRAME_TYPE_FT_RRB */
@@ -84,6 +84,7 @@ struct ft_r0kh_r1kh_resp_frame {
 	u8 pmk_r1[PMK_LEN];
 	u8 pmk_r1_name[WPA_PMK_NAME_LEN];
 	le16 pairwise;
+	le16 expiresIn;
 	struct ft_vlan vlan;
 	u8 pad[FT_R0KH_R1KH_RESP_PAD_LEN]; /* 8-octet boundary for AES block */
 	u8 key_wrap_extra[8];
@@ -91,7 +92,7 @@ struct ft_r0kh_r1kh_resp_frame {
 
 #define FT_R0KH_R1KH_PUSH_DATA_LEN (4 + FT_R1KH_ID_LEN + ETH_ALEN + \
 				    WPA_PMK_NAME_LEN + PMK_LEN + \
-				    WPA_PMK_NAME_LEN + FT_VLAN_DATA_LEN + 2)
+				    WPA_PMK_NAME_LEN + FT_VLAN_DATA_LEN + 2 + 2)
 #define FT_R0KH_R1KH_PUSH_PAD_LEN (8 - FT_R0KH_R1KH_PUSH_DATA_LEN % 8)
 struct ft_r0kh_r1kh_push_frame {
 	u8 frame_type; /* RSN_REMOTE_FRAME_TYPE_FT_RRB */
@@ -108,6 +109,7 @@ struct ft_r0kh_r1kh_push_frame {
 	u8 pmk_r1[PMK_LEN];
 	u8 pmk_r1_name[WPA_PMK_NAME_LEN];
 	le16 pairwise;
+	le16 expiresIn;
 	struct ft_vlan vlan;
 	u8 pad[FT_R0KH_R1KH_PUSH_PAD_LEN]; /* 8-octet boundary for AES block */
 	u8 key_wrap_extra[8];
