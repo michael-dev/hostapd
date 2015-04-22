@@ -73,6 +73,7 @@ struct ft_rrb_frame {
 #define FT_RRB_PMK_R1         9 /* PMK_LEN */
 
 #define FT_RRB_PAIRWISE      10 /* le16 */
+#define FT_RRB_EXPIRES_IN    11 /* le16 seconds */
 
 struct ft_rrbv1_tlv {
 	le16 type;
@@ -82,6 +83,7 @@ struct ft_rrbv1_tlv {
 
 /* session TLVs:
  *   required: [PMK_R1, PMK_R1_NAME, PAIRWISE]
+ *   optional: EXPIRES_IN
  *
  * pull frame TLVs:
  *   required: NONCE, R0KH_ID, PMK_R0_NAME, R1KH_ID, S1KH_ID
