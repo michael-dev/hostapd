@@ -229,7 +229,10 @@ struct wpa_auth_callbacks {
 	int (*send_ether)(void *ctx, const u8 *dst, u16 proto, const u8 *data,
 			  size_t data_len);
 #ifdef CONFIG_IEEE80211R
-	struct wpa_state_machine * (*add_sta)(void *ctx, const u8 *sta_addr);
+	int (*add_sta)(void *ctx, const u8 *sta_addr,
+		       struct wpa_state_machine **sm,
+		       void (*cb)(void *ctx, const u8 *buf, size_t len, const u8 *mac, int accepted, u32 session_timeout),
+		       void *cb_ctx, int cb_ctx_len);
 	int (*set_vlan)(void *ctx, const u8 *sta_addr, struct ft_vlan vlan);
 	int (*get_vlan)(void *ctx, const u8 *sta_addr, struct ft_vlan *vlan);
 	int (*send_ft_action)(void *ctx, const u8 *dst,

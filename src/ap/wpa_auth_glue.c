@@ -18,6 +18,8 @@
 #include "l2_packet/l2_packet.h"
 #include "hostapd.h"
 #include "ieee802_1x.h"
+#include "ieee802_11_auth.h"
+#include "ieee802_11.h"
 #include "preauth_auth.h"
 #include "sta_info.h"
 #include "tkip_countermeasures.h"
@@ -529,9 +531,8 @@ static int hostapd_wpa_auth_send_ft_action(void *ctx, const u8 *dst,
 
 
 static struct wpa_state_machine *
-hostapd_wpa_auth_add_sta(void *ctx, const u8 *sta_addr)
+hostapd_wpa_auth_add_sta(struct hostapd_data *hapd, const u8 *sta_addr)
 {
-	struct hostapd_data *hapd = ctx;
 	struct sta_info *sta;
 
 	if (hostapd_add_sta_node(hapd, sta_addr, WLAN_AUTH_FT) < 0)
@@ -553,6 +554,72 @@ hostapd_wpa_auth_add_sta(void *ctx, const u8 *sta_addr)
 	sta->auth_alg = WLAN_AUTH_FT;
 
 	return sta->wpa_sm;
+}
+
+
+static int
+hostapd_wpa_auth_add_sta_auth(void *ctx, const u8 *sta_addr,
+			      struct wpa_state_machine **sm,
+			      void (*cb)(void *hapd, const u8 *buf, size_t len, const u8 *mac, int accepted, u32 session_timeout),
+			      void *cb_ctx, int cb_ctx_len)
+{
+	struct hostapd_data *hapd = ctx;
+	struct sta_info *sta = NULL;
+	int res = 0;
+	void (*cb2) (struct hostapd_data *hapd, const u8 *buf, size_t len, const u8 *mac, int accepted, u32 session_timeout);
+	struct hostapd_allowed_address_info info;
+
+	hostapd_allowed_address_init(&info);
+	cb2 = (void (*) (struct hostapd_data *hapd, const u8 *buf, size_t len, const u8 *mac, int accepted, u32 session_timeout)) cb;
+
+	if (os_memcmp(sta_addr, hapd->own_addr, ETH_ALEN) == 0) {
+		wpa_printf(MSG_INFO, "Station " MACSTR " not allowed to authenticate",
+			   MAC2STR(sta_addr));
+		*sm = NULL;
+		return 0;
+	}
+
+	*sm = hostapd_wpa_auth_add_sta(hapd, sta_addr);
+	if (!*sm)
+		return 0;
+
+	res = hostapd_allowed_address(hapd, sta_addr, (u8 *) cb_ctx,
+				      cb_ctx_len, cb2, &info);
+
+	if (res == HOSTAPD_ACL_REJECT) {
+		wpa_printf(MSG_INFO, "Station " MACSTR " not allowed to authenticate",
+			   MAC2STR(sta_addr));
+		goto fail;
+	}
+	if (res == HOSTAPD_ACL_PENDING) {
+		wpa_printf(MSG_DEBUG, "Authentication frame from " MACSTR
+			   " waiting for an external authentication",
+			   MAC2STR(sta_addr));
+		/* Authentication code will re-send the authentication frame
+		 * after it has received (and cached) information from the
+		 * external source. */
+		res = -1;
+		goto fail;
+	}
+
+	sta = ap_get_sta(hapd, sta_addr);
+	if (!sta)
+		goto fail;
+
+	if (handle_auth_cfg_sta(hapd, sta, res, &info, NULL) < 0)
+		goto fail;
+
+	sta->flags &= ~WLAN_STA_PREAUTH;
+	sta->flags |= WLAN_STA_PREAUTH_FT_OVER_DS;
+
+	ieee802_1x_notify_pre_auth(sta->eapol_sm, 0);
+
+	return 0;
+fail:
+	hostapd_allowed_address_free(&info);
+	*sm = NULL;
+
+	return res;
 }
 
 
@@ -713,7 +780,7 @@ int hostapd_setup_wpa(struct hostapd_data *hapd)
 	cb.send_ether = hostapd_wpa_auth_send_ether;
 #ifdef CONFIG_IEEE80211R
 	cb.send_ft_action = hostapd_wpa_auth_send_ft_action;
-	cb.add_sta = hostapd_wpa_auth_add_sta;
+	cb.add_sta = hostapd_wpa_auth_add_sta_auth;
 	cb.set_vlan = hostapd_wpa_auth_set_vlan;
 	cb.get_vlan = hostapd_wpa_auth_get_vlan;
 	cb.add_tspec = hostapd_wpa_auth_add_tspec;

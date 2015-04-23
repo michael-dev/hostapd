@@ -358,7 +358,7 @@ void ap_handle_timer(void *eloop_ctx, void *timeout_ctx)
 	unsigned long next_time = 0;
 	int reason;
 
-	wpa_printf(MSG_DEBUG, "%s: " MACSTR " flags=0x%x timeout_next=%d",
+	wpa_printf(MSG_DEBUG, "%s: " MACSTR " flags=0x%lx timeout_next=%d",
 		   __func__, MAC2STR(sta->addr), sta->flags,
 		   sta->timeout_next);
 	if (sta->timeout_next == STA_REMOVE) {

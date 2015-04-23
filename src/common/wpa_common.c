@@ -354,6 +354,9 @@ int wpa_ft_parse_ies(const u8 *ies, size_t ies_len,
 			}
 			if (data.num_pmkid == 1 && data.pmkid)
 				parse->rsn_pmkid = data.pmkid;
+			parse->key_mgmt = data.key_mgmt;
+			parse->pairwise_cipher = data.pairwise_cipher;
+			parse->wpa_proto = data.proto;
 			break;
 		case WLAN_EID_MOBILITY_DOMAIN:
 			if (pos[1] < sizeof(struct rsn_mdie))
