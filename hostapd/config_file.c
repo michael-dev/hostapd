@@ -2475,6 +2475,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->r0_key_lifetime = atoi(pos);
 	} else if (os_strcmp(buf, "reassociation_deadline") == 0) {
 		bss->reassociation_deadline = atoi(pos);
+	} else if (os_strcmp(buf, "rkh_pos_timeout") == 0) {
+		bss->rkh_pos_timeout = atoi(pos);
 	} else if (os_strcmp(buf, "r0kh") == 0) {
 		if (add_r0kh(bss, pos) < 0) {
 			wpa_printf(MSG_DEBUG, "Line %d: Invalid r0kh '%s'",

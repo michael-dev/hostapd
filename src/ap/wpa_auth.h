@@ -178,9 +178,10 @@ struct wpa_auth_config {
 	size_t r0_key_holder_len;
 	u8 r1_key_holder[FT_R1KH_ID_LEN];
 	u32 r0_key_lifetime;
+	int rkh_pos_timeout;
 	u32 reassociation_deadline;
-	struct ft_remote_r0kh *r0kh_list;
-	struct ft_remote_r1kh *r1kh_list;
+	struct ft_remote_r0kh **r0kh_list;
+	struct ft_remote_r1kh **r1kh_list;
 	int pmk_r1_push;
 	int ft_over_ds;
 #endif /* CONFIG_IEEE80211R */
@@ -333,6 +334,7 @@ int wpa_ft_action_rx(struct wpa_state_machine *sm, const u8 *data, size_t len);
 int wpa_ft_rrb_rx(struct wpa_authenticator *wpa_auth, const u8 *src_addr,
 		  const u8 *data, size_t data_len);
 void wpa_ft_push_pmk_r1(struct wpa_authenticator *wpa_auth, const u8 *addr);
+void wpa_ft_deinit(struct wpa_authenticator *wpa_auth);
 #endif /* CONFIG_IEEE80211R */
 
 void wpa_wnmsleep_rekey_gtk(struct wpa_state_machine *sm);
