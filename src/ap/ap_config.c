@@ -90,6 +90,7 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
 
 #ifdef CONFIG_IEEE80211R
 	bss->ft_over_ds = 1;
+	bss->rkh_pos_timeout = 86400;
 #endif /* CONFIG_IEEE80211R */
 
 	bss->radius_das_time_window = 300;
