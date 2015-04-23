@@ -28,6 +28,7 @@
 #include "crypto.h"
 #include "sha1.h"
 #include "tls.h"
+#include <valgrind/memcheck.h>
 
 #if defined(SSL_CTX_get_app_data) && defined(SSL_CTX_set_app_data)
 #define OPENSSL_SUPPORTS_CTX_APP_DATA
@@ -2896,6 +2897,7 @@ openssl_get_appl_data(struct tls_connection *conn, size_t max_len)
 		return NULL;
 	}
 
+	VALGRIND_MAKE_MEM_DEFINED(wpabuf_mhead(appl_data), res);
 	wpabuf_put(appl_data, res);
 	wpa_hexdump_buf_key(MSG_MSGDUMP, "SSL: Application Data in Finished "
 			    "message", appl_data);
@@ -3035,6 +3037,7 @@ struct wpabuf * tls_connection_decrypt(void *tls_ctx,
 		wpabuf_free(buf);
 		return NULL;
 	}
+	VALGRIND_MAKE_MEM_DEFINED(wpabuf_mhead(buf), res);
 	wpabuf_put(buf, res);
 
 	if (conn->invalid_hb_used) {
