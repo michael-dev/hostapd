@@ -199,9 +199,10 @@ struct wpa_auth_config {
 	size_t r0_key_holder_len;
 	u8 r1_key_holder[FT_R1KH_ID_LEN];
 	u32 r0_key_lifetime;
+	int rkh_pos_timeout;
 	u32 reassociation_deadline;
-	struct ft_remote_r0kh *r0kh_list;
-	struct ft_remote_r1kh *r1kh_list;
+	struct ft_remote_r0kh **r0kh_list;
+	struct ft_remote_r1kh **r1kh_list;
 	int pmk_r1_push;
 	int ft_over_ds;
 	int ft_psk_generate_local;
