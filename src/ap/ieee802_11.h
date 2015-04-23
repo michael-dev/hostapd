@@ -16,6 +16,7 @@ struct hostapd_frame_info;
 struct ieee80211_ht_capabilities;
 struct ieee80211_vht_capabilities;
 struct ieee80211_mgmt;
+struct radius_sta;
 
 int ieee802_11_mgmt(struct hostapd_data *hapd, const u8 *buf, size_t len,
 		    struct hostapd_frame_info *fi);
@@ -151,4 +152,6 @@ void handle_auth_fils(struct hostapd_data *hapd, struct sta_info *sta,
 				 struct sta_info *sta,
 				 u16 resp, struct wpabuf *data, int pub));
 
+int ieee802_11_set_radius_info(struct hostapd_data *hapd, struct sta_info *sta,
+			       int res, struct radius_sta *info);
 #endif /* IEEE802_11_H */
