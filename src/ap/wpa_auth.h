@@ -322,7 +322,12 @@ struct wpa_auth_callbacks {
 			    u32 life_time, const struct wpa_ptk *ptk);
 	void (*clear_ptksa)(void *ctx, const u8 *addr, int cipher);
 #ifdef CONFIG_IEEE80211R_AP
-	struct wpa_state_machine * (*add_sta)(void *ctx, const u8 *sta_addr);
+	int (*add_sta)(void *ctx, const u8 *sta_addr,
+		       struct wpa_state_machine **sm,
+		       void (*cb)(void *ctx, const u8 *buf, size_t len,
+				  const u8 *mac, int accepted,
+				  u32 session_timeout),
+		       void *cb_ctx, int cb_ctx_len);
 	int (*add_sta_ft)(void *ctx, const u8 *sta_addr);
 	int (*set_vlan)(void *ctx, const u8 *sta_addr,
 			struct vlan_description *vlan);
