@@ -965,7 +965,7 @@ static int wpa_ft_pull_pmk_r1(struct wpa_state_machine *sm,
 			      const u8 *ies, size_t ies_len,
 			      const u8 *pmk_r0_name)
 {
-	struct ft_remote_r0kh *r0kh;
+	struct ft_remote_r0kh *r0kh, *r0kh_wildcard = NULL;
 	u8 *packet = NULL;
 	size_t packet_len;
 	struct ft_rrb_seq f_seq;
@@ -976,7 +976,13 @@ static int wpa_ft_pull_pmk_r1(struct wpa_state_machine *sm,
 		    os_memcmp_const(r0kh->id, sm->r0kh_id, sm->r0kh_id_len) ==
 		    0)
 			break;
+		if (r0kh->id_len == 1 && r0kh->id[0] == '*')
+			r0kh_wildcard = r0kh;
 		r0kh = r0kh->next;
+	}
+	if (r0kh == NULL && r0kh_wildcard != NULL) {
+		wpa_printf(MSG_DEBUG, "FT: Using wildcard R0KH-ID");
+		r0kh = r0kh_wildcard;
 	}
 	if (r0kh == NULL) {
 		wpa_hexdump(MSG_DEBUG, "FT: Did not find R0KH-ID",
@@ -2127,7 +2133,7 @@ static int wpa_ft_rrb_rx_pull(struct wpa_authenticator *wpa_auth,
 {
 	u8 *plain, *packet = NULL;
 	size_t plain_len, packet_len;
-	struct ft_remote_r1kh *r1kh;
+	struct ft_remote_r1kh *r1kh, *r1kh_wildcard = NULL;
 	int ret;
 	const u8 *f_nonce, *f_r0kh_id, *f_r1kh_id, *f_s1kh_id, *f_pmk_r0_name;
 	size_t f_nonce_len, f_r0kh_id_len, f_r1kh_id_len, f_s1kh_id_len;
@@ -2143,7 +2149,14 @@ static int wpa_ft_rrb_rx_pull(struct wpa_authenticator *wpa_auth,
 	while (r1kh) {
 		if (os_memcmp(r1kh->addr, src_addr, ETH_ALEN) == 0)
 			break;
+		if (is_zero_ether_addr(r1kh->addr) &&
+		    is_zero_ether_addr(r1kh->id))
+			r1kh_wildcard = r1kh;
 		r1kh = r1kh->next;
+	}
+	if (r1kh == NULL && r1kh_wildcard != NULL) {
+		wpa_printf(MSG_DEBUG, "FT: Using wildcard R1KH-ID");
+		r1kh = r1kh_wildcard;
 	}
 	if (r1kh == NULL) {
 		wpa_printf(MSG_DEBUG, "FT: No matching R1KH address found for "
@@ -2172,7 +2185,8 @@ static int wpa_ft_rrb_rx_pull(struct wpa_authenticator *wpa_auth,
 	rkh_id_remote.len = f_r1kh_id_len;
 	rkh_id_remote.data = f_r1kh_id;
 
-	if (wpa_ft_rrb_seq_chk(wpa_auth, &r1kh->seq, src_addr, &rkh_id_local,
+	if (r1kh != r1kh_wildcard &&
+	    wpa_ft_rrb_seq_chk(wpa_auth, &r1kh->seq, src_addr, &rkh_id_local,
 			       &rkh_id_remote, enc, enc_len, auth, auth_len,
 			       "pull request", r1kh->key, sizeof(r1kh->key),
 			       noDefer ? NULL : &wpa_ft_rrb_rx_pull))
@@ -2187,8 +2201,9 @@ static int wpa_ft_rrb_rx_pull(struct wpa_authenticator *wpa_auth,
 		return -1;
 	}
 
-	wpa_ft_rrb_seq_accept(wpa_auth, &r1kh->seq, src_addr, auth, auth_len,
-			      "pull request");
+	if (r1kh != r1kh_wildcard)
+		wpa_ft_rrb_seq_accept(wpa_auth, &r1kh->seq, src_addr, auth,
+				      auth_len, "pull request");
 
 	RRB_GET(FT_RRB_PMK_R0_NAME, pmk_r0_name, "pull request",
 		WPA_PMK_NAME_LEN);
@@ -2258,7 +2273,7 @@ static int wpa_ft_rrb_rx_r1(struct wpa_authenticator *wpa_auth,
 {
 	u8 *plain = NULL;
 	size_t plain_len = 0;
-	struct ft_remote_r0kh *r0kh;
+	struct ft_remote_r0kh *r0kh, *r0kh_wildcard = NULL;
 	const u8 *f_r1kh_id, *f_s1kh_id, *f_r0kh_id;
 	const u8 *f_pmk_r1_name, *f_pairwise, *f_pmk_r1;
 	size_t f_r1kh_id_len, f_s1kh_id_len, f_r0kh_id_len;
@@ -2280,7 +2295,13 @@ static int wpa_ft_rrb_rx_r1(struct wpa_authenticator *wpa_auth,
 	while (r0kh) {
 		if (os_memcmp(r0kh->addr, src_addr, ETH_ALEN) == 0)
 			break;
+		if (r0kh->id_len == 1 && r0kh->id[0] == '*')
+			r0kh_wildcard = r0kh;
 		r0kh = r0kh->next;
+	}
+	if (r0kh == NULL && r0kh_wildcard != NULL) {
+		wpa_printf(MSG_DEBUG, "FT: Using wildcard R0KH-ID");
+		r0kh = r0kh_wildcard;
 	}
 	if (r0kh == NULL) {
 		wpa_printf(MSG_DEBUG, "FT: PMR-R1 %s No matching R0KH address "
@@ -2289,8 +2310,8 @@ static int wpa_ft_rrb_rx_r1(struct wpa_authenticator *wpa_auth,
 		return -1;
 	}
 	RRB_GET_AUTH(FT_RRB_R0KH_ID, r0kh_id, msgtype, -1);
-	if (r0kh->id_len != f_r0kh_id_len ||
-	    os_memcmp_const(f_r0kh_id, r0kh->id, f_r0kh_id_len) != 0) {
+	if (r0kh != r0kh_wildcard && (r0kh->id_len != f_r0kh_id_len ||
+	    os_memcmp_const(f_r0kh_id, r0kh->id, f_r0kh_id_len) != 0)) {
 		wpa_printf(MSG_DEBUG, "FT: PMK-R1 %s did not use a matching "
 			   "R0KH-ID", msgtype);
 		return -1;
@@ -2304,7 +2325,8 @@ static int wpa_ft_rrb_rx_r1(struct wpa_authenticator *wpa_auth,
 	rkh_id_remote.len = r0kh->id_len;
 	rkh_id_remote.data = r0kh->id;
 
-	if (wpa_ft_rrb_seq_chk(wpa_auth, &r0kh->seq, src_addr, &rkh_id_local,
+	if (r0kh != r0kh_wildcard &&
+	    wpa_ft_rrb_seq_chk(wpa_auth, &r0kh->seq, src_addr, &rkh_id_local,
 			       &rkh_id_remote, enc, enc_len, auth, auth_len,
 			       msgtype, r0kh->key, sizeof(r0kh->key), cb))
 		return -1;
@@ -2318,8 +2340,9 @@ static int wpa_ft_rrb_rx_r1(struct wpa_authenticator *wpa_auth,
 		return -1;
 	}
 
-	wpa_ft_rrb_seq_accept(wpa_auth, &r0kh->seq, src_addr, auth, auth_len,
-			      msgtype);
+	if (r0kh != r0kh_wildcard)
+		wpa_ft_rrb_seq_accept(wpa_auth, &r0kh->seq, src_addr, auth,
+				      auth_len, "pull request");
 
 	RRB_GET(FT_RRB_S1KH_ID, s1kh_id, msgtype, ETH_ALEN);
 
@@ -2493,6 +2516,8 @@ static int wpa_ft_rrb_rx_seq(struct wpa_authenticator *wpa_auth,
 	int r0kh_local = 0, r1kh_local = 0;
 	u8 *plain = NULL;
 	size_t plain_len = 0;
+	struct ft_remote_r0kh *r0kh_wildcard = NULL;
+	struct ft_remote_r1kh *r1kh_wildcard = NULL;
 
 	RRB_GET_OPTIONAL_AUTH(FT_RRB_R0KH_ID, r0kh_id, "seq", -1);
 	RRB_GET_OPTIONAL_AUTH(FT_RRB_R1KH_ID, r1kh_id, "seq", FT_R1KH_ID_LEN);
@@ -2533,7 +2558,13 @@ static int wpa_ft_rrb_rx_seq(struct wpa_authenticator *wpa_auth,
 			    os_memcmp_const((*r0kh)->id, f_r0kh_id,
 					    f_r0kh_id_len) == 0)
 				break;
+			if ((*r0kh)->id_len == 1 && (*r0kh)->id[0] == '*')
+				r0kh_wildcard = *r0kh;
 			*r0kh = (*r0kh)->next;
+		}
+		if (*r0kh == NULL && r0kh_wildcard != NULL) {
+			wpa_printf(MSG_DEBUG, "FT: Using wildcard R0KH-ID");
+			*r0kh = r0kh_wildcard;
 		}
 		if (*r0kh == NULL) {
 			wpa_hexdump(MSG_DEBUG, "FT: Did not find R0KH-ID",
@@ -2559,7 +2590,14 @@ static int wpa_ft_rrb_rx_seq(struct wpa_authenticator *wpa_auth,
 			if (os_memcmp_const((*r1kh)->id, f_r1kh_id,
 					    FT_R1KH_ID_LEN) == 0)
 				break;
+			if (is_zero_ether_addr((*r1kh)->addr) &&
+			    is_zero_ether_addr((*r1kh)->id))
+				r1kh_wildcard = *r1kh;
 			*r1kh = (*r1kh)->next;
+		}
+		if (*r1kh == NULL && r1kh_wildcard != NULL) {
+			wpa_printf(MSG_DEBUG, "FT: Using wildcard R1KH-ID");
+			*r1kh = r1kh_wildcard;
 		}
 		if (*r1kh == NULL) {
 			wpa_hexdump(MSG_DEBUG, "FT: Did not find R1KH-ID",
@@ -2588,6 +2626,12 @@ static int wpa_ft_rrb_rx_seq(struct wpa_authenticator *wpa_auth,
 	}
 
 	os_free(plain); plain = NULL;
+
+	if (*r0kh == r0kh_wildcard)
+		*r0kh = NULL;
+
+	if (*r1kh == r1kh_wildcard)
+		*r1kh = NULL;
 
 	return 0;
 
@@ -2688,7 +2732,7 @@ static int wpa_ft_rrb_rx_seq_resp(struct wpa_authenticator *wpa_auth,
 	if (r1kh)
 		rkh_seq = &r0kh->seq;
 
-	if (!rkh_seq)
+	if (!rkh_seq) /* e.g. with wildcard */
 		goto out;
 
 	if (os_memcmp_const(f_nonce, rkh_seq->nonce, FT_RRB_NONCE_LEN) != 0) {
@@ -2872,6 +2916,8 @@ void wpa_ft_rrb_oui_rx(struct wpa_authenticator *wpa_auth, const u8 *src_addr,
 		       const u8 *dst_addr, u8 oui_suffix, const u8 *data,
 		       size_t data_len)
 {
+	int noDefer = 0;
+
 	wpa_printf(MSG_DEBUG, "FT: RRB-OUI received frame from remote AP "
 		   MACSTR, MAC2STR(src_addr));
 	wpa_printf(MSG_DEBUG, "FT: RRB-OUI frame - oui_suffix=%d", oui_suffix);
@@ -2888,7 +2934,7 @@ void wpa_ft_rrb_oui_rx(struct wpa_authenticator *wpa_auth, const u8 *src_addr,
 			   "FT: RRB-OUI received frame from remote AP " MACSTR
 			   " to multicast address " MACSTR,
 			   MAC2STR(src_addr), MAC2STR(dst_addr));
-		return;
+		noDefer = 1;
 	}
 
 	const u16 *head = (u16 *) data;
@@ -2909,19 +2955,24 @@ void wpa_ft_rrb_oui_rx(struct wpa_authenticator *wpa_auth, const u8 *src_addr,
 
 	switch (oui_suffix) {
 	case FT_PACKET_R0KH_R1KH_PULL:
-		wpa_ft_rrb_rx_pull(wpa_auth, src_addr, enc, elen, auth, alen, 0);
+		wpa_ft_rrb_rx_pull(wpa_auth, src_addr, enc, elen, auth, alen,
+				   noDefer);
 		break;
 	case FT_PACKET_R0KH_R1KH_RESP:
-		wpa_ft_rrb_rx_resp(wpa_auth, src_addr, enc, elen, auth, alen, 0);
+		wpa_ft_rrb_rx_resp(wpa_auth, src_addr, enc, elen, auth, alen,
+				   noDefer);
 		break;
 	case FT_PACKET_R0KH_R1KH_PUSH:
-		wpa_ft_rrb_rx_push(wpa_auth, src_addr, enc, elen, auth, alen, 0);
+		wpa_ft_rrb_rx_push(wpa_auth, src_addr, enc, elen, auth, alen,
+				   noDefer);
 		break;
 	case FT_PACKET_R0KH_R1KH_SEQ_REQ:
-		wpa_ft_rrb_rx_seq_req(wpa_auth, src_addr, enc, elen, auth, alen, 0);
+		wpa_ft_rrb_rx_seq_req(wpa_auth, src_addr, enc, elen, auth, alen,
+				      noDefer);
 		break;
 	case FT_PACKET_R0KH_R1KH_SEQ_RESP:
-		wpa_ft_rrb_rx_seq_resp(wpa_auth, src_addr, enc, elen, auth, alen, 0);
+		wpa_ft_rrb_rx_seq_resp(wpa_auth, src_addr, enc, elen, auth, alen,
+				       noDefer);
 		break;
 	}
 }
@@ -3002,10 +3053,11 @@ void wpa_ft_push_pmk_r1(struct wpa_authenticator *wpa_auth, const u8 *addr)
 	wpa_printf(MSG_DEBUG, "FT: Deriving and pushing PMK-R1 keys to R1KHs "
 		   "for STA " MACSTR, MAC2STR(addr));
 
-	r1kh = wpa_auth->conf.r1kh_list;
-	while (r1kh) {
+	for (r1kh = wpa_auth->conf.r1kh_list; r1kh; r1kh = r1kh->next) {
+		if (is_zero_ether_addr(r1kh->addr) ||
+		    is_zero_ether_addr(r1kh->id))
+			continue;
 		wpa_ft_generate_pmk_r1(wpa_auth, r0, r1kh, addr);
-		r1kh = r1kh->next;
 	}
 }
 
