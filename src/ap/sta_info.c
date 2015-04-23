@@ -415,7 +415,7 @@ void ap_handle_timer(void *eloop_ctx, void *timeout_ctx)
 	unsigned long next_time = 0;
 	int reason;
 
-	wpa_printf(MSG_DEBUG, "%s: %s: " MACSTR " flags=0x%x timeout_next=%d",
+	wpa_printf(MSG_DEBUG, "%s: %s: " MACSTR " flags=0x%lx timeout_next=%d",
 		   hapd->conf->iface, __func__, MAC2STR(sta->addr), sta->flags,
 		   sta->timeout_next);
 	if (sta->timeout_next == STA_REMOVE) {
@@ -590,6 +590,9 @@ static void ap_handle_session_timer(void *eloop_ctx, void *timeout_ctx)
 
 	wpa_printf(MSG_DEBUG, "%s: Session timer for STA " MACSTR,
 		   hapd->conf->iface, MAC2STR(sta->addr));
+
+	sta->flags &= ~WLAN_STA_PREAUTH_FT_OVER_DS;
+
 	if (!(sta->flags & (WLAN_STA_AUTH | WLAN_STA_ASSOC |
 			    WLAN_STA_AUTHORIZED))) {
 		if (sta->flags & WLAN_STA_GAS) {
