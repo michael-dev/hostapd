@@ -45,6 +45,7 @@ struct ft_rrb_frame {
 
 #define FT_R0KH_R1KH_PULL_NONCE_LEN 16
 #define FT_R0KH_R1KH_PULL_DATA_LEN (FT_R0KH_R1KH_PULL_NONCE_LEN + \
+				    FT_R0KH_ID_MAX_LEN + 1 + \
 				    WPA_PMK_NAME_LEN + FT_R1KH_ID_LEN + \
 				    ETH_ALEN)
 #define FT_R0KH_R1KH_PULL_PAD_LEN (8 - FT_R0KH_R1KH_PULL_DATA_LEN % 8)
@@ -61,6 +62,8 @@ struct ft_r0kh_r1kh_pull_frame {
 	u8 ap_address[ETH_ALEN];
 
 	u8 nonce[FT_R0KH_R1KH_PULL_NONCE_LEN];
+	u8 r0kh_id[FT_R0KH_ID_MAX_LEN];
+	u8 r0kh_id_len;
 	u8 pmk_r0_name[WPA_PMK_NAME_LEN];
 	u8 r1kh_id[FT_R1KH_ID_LEN];
 	u8 s1kh_id[ETH_ALEN];

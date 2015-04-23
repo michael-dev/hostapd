@@ -520,6 +520,11 @@ static inline int is_broadcast_ether_addr(const u8 *a)
 
 #define broadcast_ether_addr (const u8 *) "\xff\xff\xff\xff\xff\xff"
 
+static inline int is_multicast_ether_addr(const u8 *a)
+{
+	return !!(a[0] & 0x01);
+}
+
 #include "wpa_debug.h"
 
 

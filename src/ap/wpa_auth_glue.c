@@ -410,6 +410,9 @@ static int hostapd_wpa_auth_ft_iter(struct hostapd_iface *iface, void *ctx)
 	struct wpa_auth_ft_iface_iter_data *idata = ctx;
 	struct hostapd_data *hapd;
 	size_t j;
+	int multicast;
+
+	multicast = is_multicast_ether_addr(idata->dst);
 
 	for (j = 0; j < iface->num_bss; j++) {
 		hapd = iface->bss[j];
@@ -417,7 +420,8 @@ static int hostapd_wpa_auth_ft_iter(struct hostapd_iface *iface, void *ctx)
 			continue;
 		if (!hapd->wpa_auth)
 			continue;
-		if (os_memcmp(hapd->own_addr, idata->dst, ETH_ALEN) == 0) {
+		if (os_memcmp(hapd->own_addr, idata->dst, ETH_ALEN) == 0 ||
+		    multicast) {
 			wpa_printf(MSG_DEBUG, "FT: Send RRB data directly to "
 				   "locally managed BSS " MACSTR "@%s -> "
 				   MACSTR "@%s",
@@ -427,7 +431,8 @@ static int hostapd_wpa_auth_ft_iter(struct hostapd_iface *iface, void *ctx)
 			wpa_ft_rrb_rx(hapd->wpa_auth,
 				      idata->src_hapd->own_addr,
 				      idata->data, idata->data_len);
-			return 1;
+			if (!multicast)
+				return 1;
 		}
 	}
 
