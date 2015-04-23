@@ -16,6 +16,7 @@ struct hostapd_frame_info;
 struct ieee80211_ht_capabilities;
 struct ieee80211_vht_capabilities;
 struct ieee80211_mgmt;
+struct radius_sta;
 
 int ieee802_11_mgmt(struct hostapd_data *hapd, const u8 *buf, size_t len,
 		    struct hostapd_frame_info *fi);
@@ -145,4 +146,6 @@ void ieee802_11_finish_fils_auth(struct hostapd_data *hapd,
 void fils_hlp_timeout(void *eloop_ctx, void *eloop_data);
 void fils_hlp_finish_assoc(struct hostapd_data *hapd, struct sta_info *sta);
 
+int ieee802_11_set_radius_info(struct hostapd_data *hapd, struct sta_info *sta,
+			       int res, struct radius_sta *info);
 #endif /* IEEE802_11_H */
