@@ -3025,7 +3025,7 @@ struct wpabuf * tls_connection_decrypt(void *tls_ctx,
 	 * to handle the possibility of the decrypted data being longer than
 	 * input data.
 	 */
-	buf = wpabuf_alloc((wpabuf_len(in_data) + 500) * 3);
+	buf = wpabuf_alloc((SSL_pending(conn->ssl) + wpabuf_len(in_data) + 500) * 3);
 	if (buf == NULL)
 		return NULL;
 	res = SSL_read(conn->ssl, wpabuf_mhead(buf), wpabuf_size(buf));
