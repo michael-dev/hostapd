@@ -1981,7 +1981,7 @@ ieee802_11_allowed_address(struct hostapd_data *hapd, const u8 *addr,
 }
 
 
-static int
+int
 ieee802_11_set_radius_info(struct hostapd_data *hapd, struct sta_info *sta,
 			   int res, struct radius_sta *info)
 {
@@ -3931,7 +3931,8 @@ static void handle_assoc(struct hostapd_data *hapd,
 	sta = ap_get_sta(hapd, mgmt->sa);
 #ifdef CONFIG_IEEE80211R_AP
 	if (sta && sta->auth_alg == WLAN_AUTH_FT &&
-	    (sta->flags & WLAN_STA_AUTH) == 0) {
+	    (sta->flags & WLAN_STA_AUTH) == 0 &&
+	    (sta->flags & WLAN_STA_PREAUTH_FT_OVER_DS)) {
 		wpa_printf(MSG_DEBUG, "FT: Allow STA " MACSTR " to associate "
 			   "prior to authentication since it is using "
 			   "over-the-DS FT", MAC2STR(mgmt->sa));
@@ -3994,7 +3995,7 @@ static void handle_assoc(struct hostapd_data *hapd,
 			hostapd_logger(hapd, mgmt->sa,
 				       HOSTAPD_MODULE_IEEE80211,
 				       HOSTAPD_LEVEL_INFO,
-				       "Station tried to associate before authentication (aid=%d flags=0x%x)",
+				       "Station tried to associate before authentication (aid=%d flags=0x%lx)",
 				       sta ? sta->aid : -1,
 				       sta ? sta->flags : 0);
 			send_deauth(hapd, mgmt->sa,
@@ -4832,6 +4833,7 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 		new_assoc = 0;
 	sta->flags |= WLAN_STA_ASSOC;
 	sta->flags &= ~WLAN_STA_WNM_SLEEP_MODE;
+	sta->flags &= ~WLAN_STA_PREAUTH_FT_OVER_DS;
 	if ((!hapd->conf->ieee802_1x && !hapd->conf->wpa &&
 	     !hapd->conf->osen) ||
 	    sta->auth_alg == WLAN_AUTH_FILS_SK ||

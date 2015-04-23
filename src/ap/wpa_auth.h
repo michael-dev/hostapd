@@ -277,7 +277,12 @@ struct wpa_auth_callbacks {
 				 int ap_max_chanwidth, int ap_seg1_idx,
 				 int *bandwidth, int *seg1_idx);
 #ifdef CONFIG_IEEE80211R_AP
-	struct wpa_state_machine * (*add_sta)(void *ctx, const u8 *sta_addr);
+	int (*add_sta)(void *ctx, const u8 *sta_addr,
+		       struct wpa_state_machine **sm,
+		       void (*cb)(void *ctx, const u8 *buf, size_t len,
+				  const u8 *mac, int accepted,
+				  u32 session_timeout),
+		       void *cb_ctx, int cb_ctx_len);
 	int (*set_vlan)(void *ctx, const u8 *sta_addr,
 			struct vlan_description *vlan);
 	int (*get_vlan)(void *ctx, const u8 *sta_addr,
