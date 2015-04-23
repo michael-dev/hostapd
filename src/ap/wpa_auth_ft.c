@@ -589,6 +589,116 @@ static int wpa_ft_fetch_pmk_r1(struct wpa_authenticator *wpa_auth,
 }
 
 
+static void wpa_ft_rrb_del_r0kh(void *eloop_ctx, void *timeout_ctx)
+{
+	struct wpa_authenticator *wpa_auth = eloop_ctx;
+	struct ft_remote_r0kh *r0kh, *prev = NULL;
+
+	if (!wpa_auth->conf.r0kh_list)
+		return;
+
+	r0kh = *wpa_auth->conf.r0kh_list;
+	while (r0kh) {
+		if (r0kh != timeout_ctx) {
+			r0kh = r0kh->next;
+			continue;
+		}
+		if (prev)
+			prev->next = r0kh->next;
+		else
+			*wpa_auth->conf.r0kh_list = r0kh->next;
+		os_free(r0kh);
+		break;
+	}
+}
+
+
+static void wpa_ft_rrb_add_r0kh(struct wpa_authenticator *wpa_auth,
+				struct ft_remote_r0kh *r0kh_wildcard,
+				const u8 *src_addr,
+				u8 *r0kh_id, size_t id_len, int timeout)
+{
+	struct ft_remote_r0kh *r0kh;
+
+	if (!wpa_auth->conf.r0kh_list)
+		return;
+
+	r0kh = os_zalloc(sizeof(*r0kh));
+	if (r0kh == NULL)
+		return;
+
+	os_memcpy(r0kh->addr, src_addr, sizeof(r0kh->addr));
+	os_memcpy(r0kh->id, r0kh_id, sizeof(r0kh->id));
+	r0kh->id_len = id_len;
+	if (r0kh_wildcard)
+		os_memcpy(r0kh->key, r0kh_wildcard->key, sizeof(r0kh->key));
+	r0kh->next = *wpa_auth->conf.r0kh_list;
+	*wpa_auth->conf.r0kh_list = r0kh;
+	timeout = wpa_auth->conf.rkh_pos_timeout;
+
+	if (timeout > 0)
+		eloop_register_timeout(timeout, 0, wpa_ft_rrb_del_r0kh,
+				       wpa_auth, r0kh);
+}
+
+
+static void wpa_ft_rrb_del_r1kh(void *eloop_ctx, void *timeout_ctx)
+{
+	struct wpa_authenticator *wpa_auth = eloop_ctx;
+	struct ft_remote_r1kh *r1kh, *prev = NULL;
+
+	if (!wpa_auth->conf.r1kh_list)
+		return;
+
+	r1kh = *wpa_auth->conf.r1kh_list;
+	while (r1kh) {
+		if (r1kh != timeout_ctx) {
+			r1kh = r1kh->next;
+			continue;
+		}
+		if (prev)
+			prev->next = r1kh->next;
+		else
+			*wpa_auth->conf.r1kh_list = r1kh->next;
+		os_free(r1kh);
+		break;
+	}
+}
+
+
+static void wpa_ft_rrb_add_r1kh(struct wpa_authenticator *wpa_auth,
+				struct ft_remote_r1kh *r1kh_wildcard,
+				const u8 *src_addr, const u8 *r1kh_id,
+				int timeout)
+{
+	struct ft_remote_r1kh *r1kh;
+
+	if (!wpa_auth->conf.r1kh_list)
+		return;
+
+	r1kh = os_zalloc(sizeof(*r1kh));
+	if (r1kh == NULL)
+		return;
+
+	os_memcpy(r1kh->addr, src_addr, sizeof(r1kh->addr));
+	os_memcpy(r1kh->id, r1kh_id, sizeof(r1kh->id));
+	os_memcpy(r1kh->key, r1kh_wildcard->key, sizeof(r1kh->key));
+	r1kh->next = *wpa_auth->conf.r1kh_list;
+	*wpa_auth->conf.r1kh_list = r1kh;
+
+	if (timeout > 0)
+		eloop_register_timeout(timeout, 0, wpa_ft_rrb_del_r1kh,
+				       wpa_auth, r1kh);
+}
+
+
+void wpa_ft_deinit(struct wpa_authenticator *wpa_auth)
+{
+	eloop_cancel_timeout(wpa_ft_rrb_del_r1kh, wpa_auth, ELOOP_ALL_CTX);
+	eloop_cancel_timeout(wpa_ft_rrb_del_r0kh, wpa_auth, ELOOP_ALL_CTX);
+}
+
+
 static int wpa_ft_pull_pmk_r1(struct wpa_state_machine *sm,
 			      const u8 *ies, size_t ies_len,
 			      const u8 *pmk_r0_name)
@@ -597,7 +707,9 @@ static int wpa_ft_pull_pmk_r1(struct wpa_state_machine *sm,
 	u8 *packet = NULL;
 	size_t packet_len;
 
-	r0kh = sm->wpa_auth->conf.r0kh_list;
+	if (!sm->wpa_auth->conf.r0kh_list)
+		return -1;
+	r0kh = *sm->wpa_auth->conf.r0kh_list;
 	while (r0kh) {
 		if (r0kh->id_len == sm->r0kh_id_len &&
 		    os_memcmp_const(r0kh->id, sm->r0kh_id, sm->r0kh_id_len) ==
@@ -1750,7 +1862,10 @@ static int wpa_ft_rrb_rx_pull(struct wpa_authenticator *wpa_auth,
 
 	wpa_printf(MSG_DEBUG, "FT: Received PMK-R1 pull");
 
-	r1kh = wpa_auth->conf.r1kh_list;
+	if (!wpa_auth->conf.r1kh_list)
+		return -1;
+
+	r1kh = *wpa_auth->conf.r1kh_list;
 	while (r1kh) {
 		if (os_memcmp(r1kh->addr, src_addr, ETH_ALEN) == 0)
 			break;
@@ -1796,6 +1911,10 @@ static int wpa_ft_rrb_rx_pull(struct wpa_authenticator *wpa_auth,
 	RRB_GET(FT_RRB_S1KH_ID, s1kh_id, "pull request", ETH_ALEN);
 	wpa_printf(MSG_DEBUG, "FT: PMK-R1 pull - R1KH-ID=" MACSTR " S1KH-ID="
 		   MACSTR, MAC2STR(f_r1kh_id), MAC2STR(f_s1kh_id));
+
+	if (r1kh == r1kh_wildcard && wpa_auth->conf.rkh_pos_timeout)
+		wpa_ft_rrb_add_r1kh(wpa_auth, r1kh_wildcard, src_addr,
+				    f_r1kh_id, wpa_auth->conf.rkh_pos_timeout);
 
 	struct tlv_list resp_tlv[] = {
 		{ .type = FT_RRB_NONCE, .len = f_nonce_len,
@@ -1859,6 +1978,8 @@ static void ft_pull_resp_cb_finish(void *eloop_ctx, void *timeout_ctx)
 struct ft_pull_resp_cb_ctx {
 	const u8 *s1kh_id;
 	const u8 *nonce;
+	u8 src_addr[ETH_ALEN];
+	struct ft_remote_r0kh *r0kh_wildcard;
 };
 
 static int ft_pull_resp_cb(struct wpa_state_machine *sm, void *ctx)
@@ -1876,6 +1997,13 @@ static int ft_pull_resp_cb(struct wpa_state_machine *sm, void *ctx)
 	wpa_printf(MSG_DEBUG, "FT: Response to a pending pull request for "
 		   MACSTR " - process from timeout", MAC2STR(sm->addr));
 	eloop_register_timeout(0, 0, ft_pull_resp_cb_finish, sm, NULL);
+
+	if (info->r0kh_wildcard && sm->wpa_auth->conf.rkh_pos_timeout)
+		wpa_ft_rrb_add_r0kh(sm->wpa_auth, info->r0kh_wildcard,
+				    info->src_addr, sm->r0kh_id,
+				    sm->r0kh_id_len,
+				    sm->wpa_auth->conf.rkh_pos_timeout);
+
 	return 1;
 }
 
@@ -1945,7 +2073,10 @@ static int wpa_ft_rrb_rx_resp(struct wpa_authenticator *wpa_auth,
 
 	wpa_printf(MSG_DEBUG, "FT: Received PMK-R1 pull response");
 
-	r0kh = wpa_auth->conf.r0kh_list;
+	if (!wpa_auth->conf.r0kh_list)
+		return -1;
+
+	r0kh = *wpa_auth->conf.r0kh_list;
 	while (r0kh) {
 		if (os_memcmp(r0kh->addr, src_addr, ETH_ALEN) == 0)
 			break;
@@ -1988,6 +2119,8 @@ static int wpa_ft_rrb_rx_resp(struct wpa_authenticator *wpa_auth,
 
 	ctx.s1kh_id = f_s1kh_id;
 	ctx.nonce = f_nonce;
+	os_memcpy(ctx.src_addr, src_addr, ETH_ALEN);
+	ctx.r0kh_wildcard = (r0kh == r0kh_wildcard) ? r0kh_wildcard : NULL;
 
 	wpa_auth_for_each_sta(wpa_auth, ft_pull_resp_cb, &ctx);
 
@@ -2017,7 +2150,10 @@ static int wpa_ft_rrb_rx_push(struct wpa_authenticator *wpa_auth,
 
 	wpa_printf(MSG_DEBUG, "FT: Received PMK-R1 push");
 
-	r0kh = wpa_auth->conf.r0kh_list;
+	if (!wpa_auth->conf.r0kh_list)
+		return -1;
+
+	r0kh = *wpa_auth->conf.r0kh_list;
 	while (r0kh) {
 		if (os_memcmp(r0kh->addr, src_addr, ETH_ALEN) == 0)
 			break;
@@ -2260,6 +2396,8 @@ void wpa_ft_push_pmk_r1(struct wpa_authenticator *wpa_auth, const u8 *addr)
 
 	if (!wpa_auth->conf.pmk_r1_push)
 		return;
+	if (!wpa_auth->conf.r1kh_list)
+		return;
 
 	r0 = wpa_auth->ft_pmk_cache->pmk_r0;
 	while (r0) {
@@ -2275,7 +2413,7 @@ void wpa_ft_push_pmk_r1(struct wpa_authenticator *wpa_auth, const u8 *addr)
 	wpa_printf(MSG_DEBUG, "FT: Deriving and pushing PMK-R1 keys to R1KHs "
 		   "for STA " MACSTR, MAC2STR(addr));
 
-	for (r1kh = wpa_auth->conf.r1kh_list; r1kh; r1kh = r1kh->next) {
+	for (r1kh = *wpa_auth->conf.r1kh_list; r1kh; r1kh = r1kh->next) {
 		if (is_zero_ether_addr(r1kh->addr) ||
 		    is_zero_ether_addr(r1kh->id))
 			continue;
