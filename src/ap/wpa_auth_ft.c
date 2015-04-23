@@ -24,6 +24,9 @@
 
 #ifdef CONFIG_IEEE80211R
 
+static int wpa_ft_rrb_rx_request(struct wpa_authenticator *wpa_auth,
+				 const u8 *current_ap, const u8 *sta_addr,
+				 const u8 *body, size_t len);
 static int wpa_ft_send_rrb_auth_resp(struct wpa_state_machine *sm,
 				     const u8 *current_ap, const u8 *sta_addr,
 				     u16 status, const u8 *resp_ies,
@@ -51,12 +54,17 @@ static int wpa_ft_action_send(struct wpa_authenticator *wpa_auth,
 }
 
 
-static struct wpa_state_machine *
-wpa_ft_add_sta(struct wpa_authenticator *wpa_auth, const u8 *sta_addr)
+static int
+wpa_ft_add_sta(struct wpa_authenticator *wpa_auth, const u8 *sta_addr,
+	       struct wpa_state_machine **sm,
+	       void (*cb)(void *hapd, const u8 *buf, size_t len, const u8 *mac, int accepted, u32 session_timeout),
+	       void *cb_ctx, int cb_ctx_len)
 {
-	if (wpa_auth->cb.add_sta == NULL)
-		return NULL;
-	return wpa_auth->cb.add_sta(wpa_auth->cb.ctx, sta_addr);
+	if (wpa_auth->cb.add_sta == NULL) {
+		*sm = NULL;
+		return 0;
+	}
+	return wpa_auth->cb.add_sta(wpa_auth->cb.ctx, sta_addr, sm, cb, cb_ctx, cb_ctx_len);
 }
 
 
@@ -1338,21 +1346,59 @@ static void wpa_ft_rrb_rx_request_cb(void *ctx, const u8 *dst, const u8 *bssid,
 	wpa_printf(MSG_DEBUG, "FT: Over-the-DS RX request cb for " MACSTR,
 		   MAC2STR(sm->addr));
 	wpa_ft_send_rrb_auth_resp(sm, sm->ft_pending_current_ap, sm->addr,
-				  WLAN_STATUS_SUCCESS, ies, ies_len);
+				  resp, ies, ies_len);
 }
 
+
+struct wpa_ft_rrb_rx_request_restart_ctx {
+	struct wpa_authenticator *wpa_auth;
+	u8 current_ap[ETH_ALEN];
+	u8 sta_addr[ETH_ALEN];
+	u8 buf[];
+};
+
+
+static void
+wpa_ft_rrb_rx_request_restart_cb(void *hapd, const u8 *buf,
+				 size_t len, const u8 *mac, int accepted,
+				 u32 session_timeout)
+{
+	struct wpa_ft_rrb_rx_request_restart_ctx *ctx = (struct wpa_ft_rrb_rx_request_restart_ctx*) buf;
+
+	wpa_ft_rrb_rx_request(ctx->wpa_auth, ctx->current_ap, ctx->sta_addr, ctx->buf, len - sizeof(*ctx));
+}
 
 static int wpa_ft_rrb_rx_request(struct wpa_authenticator *wpa_auth,
 				 const u8 *current_ap, const u8 *sta_addr,
 				 const u8 *body, size_t len)
 {
-	struct wpa_state_machine *sm;
+	struct wpa_state_machine *sm = NULL;
 	u16 status;
 	u8 *resp_ies;
 	size_t resp_ies_len;
 	int res;
+	struct wpa_ft_rrb_rx_request_restart_ctx *cb_ctx;
 
-	sm = wpa_ft_add_sta(wpa_auth, sta_addr);
+	cb_ctx = os_zalloc(sizeof(struct wpa_ft_rrb_rx_request_restart_ctx) + len);
+	if (cb_ctx == NULL) {
+		wpa_printf(MSG_DEBUG, "FT: Failed to allocate "
+			   "wpa_ft_rrb_rx_request_restart_ctx");
+		return -1;
+	}
+
+	cb_ctx->wpa_auth = wpa_auth;
+	os_memcpy(cb_ctx->current_ap, current_ap, ETH_ALEN);
+	os_memcpy(cb_ctx->sta_addr, sta_addr, ETH_ALEN);
+	os_memcpy(cb_ctx->buf, body, len);
+
+	res = wpa_ft_add_sta(wpa_auth, sta_addr, &sm,
+			    &wpa_ft_rrb_rx_request_restart_cb, cb_ctx,
+			    sizeof(*cb_ctx) + len);
+	os_free(cb_ctx); cb_ctx = NULL;
+	if (res < 0) {
+		wpa_printf(MSG_DEBUG, "FT: No immediate response available - wait for macaddr_acl response");
+		return 0;
+	}
 	if (sm == NULL) {
 		wpa_printf(MSG_DEBUG, "FT: Failed to add new STA based on "
 			   "RRB Request");

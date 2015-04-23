@@ -40,6 +40,7 @@
 #define WLAN_STA_PENDING_DISASSOC_CB BIT(29)
 #define WLAN_STA_PENDING_DEAUTH_CB BIT(30)
 #define WLAN_STA_NONERP BIT(31)
+#define WLAN_STA_PREAUTH_FT_OVER_DS (((u64) 1) << 32) /* the BIT marcro only works for <32bit, https://gcc.gnu.org/ml/gcc/1999-09n/msg00860.html */
 
 /* Maximum number of supported rates (from both Supported Rates and Extended
  * Supported Rates IEs). */
@@ -55,7 +56,7 @@ struct sta_info {
 	be32 ipaddr;
 	struct dl_list ip6addr; /* list head for struct ip6addr */
 	u16 aid; /* STA's unique AID (1 .. 2007) or 0 if not yet assigned */
-	u32 flags; /* Bitfield of WLAN_STA_* */
+	u64 flags; /* Bitfield of WLAN_STA_* */
 	u16 capability;
 	u16 listen_interval; /* or beacon_int for APs */
 	u8 supported_rates[WLAN_SUPP_RATES_MAX];
