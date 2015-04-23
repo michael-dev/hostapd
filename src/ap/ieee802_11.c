@@ -865,6 +865,71 @@ int auth_sae_init_committed(struct hostapd_data *hapd, struct sta_info *sta)
 #endif /* CONFIG_SAE */
 
 
+void handle_auth_restart_cb(struct hostapd_data *hapd, const u8 *buf,
+			    size_t len, const u8 *mac, int accepted,
+			    u32 session_timeout)
+{
+#ifdef CONFIG_DRIVER_RADIUS_ACL
+	hostapd_drv_set_radius_acl_auth(hapd, mac, accepted, session_timeout);
+#else /* CONFIG_DRIVER_RADIUS_ACL */
+#ifdef NEED_AP_MLME
+	/* Re-send original authentication frame for 802.11 processing */
+	wpa_printf(MSG_DEBUG, "Re-sending authentication frame after "
+		   "successful RADIUS ACL query");
+	ieee802_11_mgmt(hapd, buf, len, NULL);
+#endif /* NEED_AP_MLME */
+#endif /* CONFIG_DRIVER_RADIUS_ACL */
+}
+
+
+int handle_auth_cfg_sta(struct hostapd_data *hapd, struct sta_info *sta,
+			int res, struct hostapd_allowed_address_info *info,
+			u16 *resp)
+{
+	if (info->vlan_id.notempty &&
+	    !hostapd_vlan_id_valid(hapd->conf->vlan, info->vlan_id)) {
+		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_RADIUS,
+			       HOSTAPD_LEVEL_INFO, "Invalid VLAN "
+			       "%d%s received from RADIUS server",
+			       info->vlan_id.untagged,
+			       info->vlan_id.tagged[0] ? "+" : "");
+		*resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
+		return -1;
+	}
+	if (ap_sta_set_vlan(hapd, sta, info->vlan_id) < 0) {
+		*resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
+		return -1;
+	}
+	if (sta->vlan_id)
+		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_RADIUS,
+			       HOSTAPD_LEVEL_INFO, "VLAN ID %d", sta->vlan_id);
+
+	hostapd_free_psk_list(sta->psk);
+	if (hapd->conf->wpa_psk_radius != PSK_RADIUS_IGNORED) {
+		sta->psk = info->psk;
+		info->psk = NULL;
+	} else {
+		sta->psk = NULL;
+	}
+
+	sta->identity = info->identity;
+	info->identity = NULL;
+	sta->radius_cui = info->radius_cui;
+	info->radius_cui = NULL;
+
+	if (hapd->conf->acct_interim_interval == 0 &&
+	    info->acct_interim_interval)
+		sta->acct_interim_interval = info->acct_interim_interval;
+
+	if (res == HOSTAPD_ACL_ACCEPT_TIMEOUT)
+		ap_sta_session_timeout(hapd, sta, info->session_timeout);
+	else
+		ap_sta_no_session_timeout(hapd, sta);
+
+	return 0;
+}
+
+
 static void handle_auth(struct hostapd_data *hapd,
 			const struct ieee80211_mgmt *mgmt, size_t len)
 {
@@ -874,16 +939,12 @@ static void handle_auth(struct hostapd_data *hapd,
 	int res;
 	u16 fc;
 	const u8 *challenge = NULL;
-	u32 session_timeout, acct_interim_interval;
-	struct vlan_description vlan_id;
-	struct hostapd_sta_wpa_psk_short *psk = NULL;
 	u8 resp_ies[2 + WLAN_AUTH_CHALLENGE_LEN];
 	size_t resp_ies_len = 0;
-	char *identity = NULL;
-	char *radius_cui = NULL;
 	u16 seq_ctrl;
+	struct hostapd_allowed_address_info info;
 
-	os_memset(&vlan_id, 0, sizeof(vlan_id));
+	hostapd_allowed_address_init(&info);
 
 	if (len < IEEE80211_HDRLEN + sizeof(mgmt->u.auth)) {
 		wpa_printf(MSG_INFO, "handle_auth - too short payload (len=%lu)",
@@ -960,9 +1021,8 @@ static void handle_auth(struct hostapd_data *hapd,
 	}
 
 	res = hostapd_allowed_address(hapd, mgmt->sa, (u8 *) mgmt, len,
-				      &session_timeout,
-				      &acct_interim_interval, &vlan_id,
-				      &psk, &identity, &radius_cui);
+				      &handle_auth_restart_cb,
+				      &info);
 
 	if (res == HOSTAPD_ACL_REJECT) {
 		wpa_printf(MSG_INFO, "Station " MACSTR " not allowed to authenticate",
@@ -1021,46 +1081,11 @@ static void handle_auth(struct hostapd_data *hapd,
 	sta->last_seq_ctrl = seq_ctrl;
 	sta->last_subtype = WLAN_FC_STYPE_AUTH;
 
-	if (vlan_id.notempty &&
-	    !hostapd_vlan_id_valid(hapd->conf->vlan, vlan_id)) {
-		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_RADIUS,
-			       HOSTAPD_LEVEL_INFO, "Invalid VLAN "
-			       "%d%s received from RADIUS server",
-			       vlan_id.untagged,
-			       vlan_id.tagged[0] ? "+" : "");
-		resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
+	if (handle_auth_cfg_sta(hapd, sta, res, &info, &resp) < 0)
 		goto fail;
-	}
-	if (ap_sta_set_vlan(hapd, sta, vlan_id) < 0) {
-		resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
-		goto fail;
-	}
-	if (sta->vlan_id)
-		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_RADIUS,
-			       HOSTAPD_LEVEL_INFO, "VLAN ID %d", sta->vlan_id);
-
-	hostapd_free_psk_list(sta->psk);
-	if (hapd->conf->wpa_psk_radius != PSK_RADIUS_IGNORED) {
-		sta->psk = psk;
-		psk = NULL;
-	} else {
-		sta->psk = NULL;
-	}
-
-	sta->identity = identity;
-	identity = NULL;
-	sta->radius_cui = radius_cui;
-	radius_cui = NULL;
 
 	sta->flags &= ~WLAN_STA_PREAUTH;
 	ieee802_1x_notify_pre_auth(sta->eapol_sm, 0);
-
-	if (hapd->conf->acct_interim_interval == 0 && acct_interim_interval)
-		sta->acct_interim_interval = acct_interim_interval;
-	if (res == HOSTAPD_ACL_ACCEPT_TIMEOUT)
-		ap_sta_session_timeout(hapd, sta, session_timeout);
-	else
-		ap_sta_no_session_timeout(hapd, sta);
 
 	switch (auth_alg) {
 	case WLAN_AUTH_OPEN:
@@ -1129,9 +1154,7 @@ static void handle_auth(struct hostapd_data *hapd,
 	}
 
  fail:
-	os_free(identity);
-	os_free(radius_cui);
-	hostapd_free_psk_list(psk);
+	hostapd_allowed_address_free(&info);
 
 	send_auth_reply(hapd, mgmt->sa, mgmt->bssid, auth_alg,
 			auth_transaction + 1, resp, resp_ies, resp_ies_len);

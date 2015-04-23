@@ -16,6 +16,7 @@ struct hostapd_frame_info;
 struct ieee80211_ht_capabilities;
 struct ieee80211_vht_capabilities;
 struct ieee80211_mgmt;
+struct hostapd_allowed_address_info;
 
 int ieee802_11_mgmt(struct hostapd_data *hapd, const u8 *buf, size_t len,
 		    struct hostapd_frame_info *fi);
@@ -103,5 +104,8 @@ static inline void sae_clear_retransmit_timer(struct hostapd_data *hapd,
 {
 }
 #endif /* CONFIG_SAE */
+int handle_auth_cfg_sta(struct hostapd_data *hapd, struct sta_info *sta,
+			int res, struct hostapd_allowed_address_info *info,
+			u16 *resp);
 
 #endif /* IEEE802_11_H */

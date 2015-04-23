@@ -16,12 +16,24 @@ enum {
 	HOSTAPD_ACL_ACCEPT_TIMEOUT = 3
 };
 
+struct hostapd_allowed_address_info {
+	u32 session_timeout;
+	u32 acct_interim_interval;
+	struct vlan_description vlan_id;
+	struct hostapd_sta_wpa_psk_short *psk;
+	char *identity;
+	char *radius_cui;
+};
+
+void hostapd_allowed_address_init(struct hostapd_allowed_address_info *info);
+void hostapd_allowed_address_free(struct hostapd_allowed_address_info *info);
 int hostapd_allowed_address(struct hostapd_data *hapd, const u8 *addr,
-			    const u8 *msg, size_t len, u32 *session_timeout,
-			    u32 *acct_interim_interval,
-			    struct vlan_description *vlan_id,
-			    struct hostapd_sta_wpa_psk_short **psk,
-			    char **identity, char **radius_cui);
+			    const u8 *msg, size_t len,
+			    void (*cb) (struct hostapd_data *hapd,
+					const u8 *buf, size_t len,
+					const u8 *mac, int accepted,
+					u32 session_timeout),
+			    struct hostapd_allowed_address_info *info);
 int hostapd_acl_init(struct hostapd_data *hapd);
 void hostapd_acl_deinit(struct hostapd_data *hapd);
 void hostapd_free_psk_list(struct hostapd_sta_wpa_psk_short *psk);
