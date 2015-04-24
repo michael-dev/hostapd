@@ -87,7 +87,7 @@ struct ft_r0kh_r1kh_resp_frame {
 	u8 pmk_r1[PMK_LEN];
 	u8 pmk_r1_name[WPA_PMK_NAME_LEN];
 	le16 pairwise;
-	le16 expiresIn;
+	le16 expiresIn; /* 0xffff for no-entry */
 	struct ft_vlan vlan;
 	u8 pad[FT_R0KH_R1KH_RESP_PAD_LEN]; /* 8-octet boundary for AES block */
 	u8 key_wrap_extra[8];
@@ -179,6 +179,7 @@ struct wpa_auth_config {
 	u8 r1_key_holder[FT_R1KH_ID_LEN];
 	u32 r0_key_lifetime;
 	int rkh_pos_timeout;
+	int rkh_neg_timeout;
 	int rkh_pull_timeout; /* ms */
 	int rkh_pull_retries;
 	u32 reassociation_deadline;

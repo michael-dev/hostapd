@@ -2477,6 +2477,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->reassociation_deadline = atoi(pos);
 	} else if (os_strcmp(buf, "rkh_pos_timeout") == 0) {
 		bss->rkh_pos_timeout = atoi(pos);
+	} else if (os_strcmp(buf, "rkh_neg_timeout") == 0) {
+		bss->rkh_neg_timeout = atoi(pos);
 	} else if (os_strcmp(buf, "rkh_pull_timeout") == 0) {
 		bss->rkh_pull_timeout = atoi(pos);
 	} else if (os_strcmp(buf, "rkh_pull_retries") == 0) {

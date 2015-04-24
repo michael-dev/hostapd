@@ -317,6 +317,7 @@ struct hostapd_bss_config {
 	u8 r1_key_holder[FT_R1KH_ID_LEN];
 	u32 r0_key_lifetime;
 	int rkh_pos_timeout;
+	int rkh_neg_timeout;
 	int rkh_pull_timeout; /* ms */
 	int rkh_pull_retries;
 	u32 reassociation_deadline;

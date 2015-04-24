@@ -78,6 +78,7 @@ static void hostapd_wpa_auth_conf(struct hostapd_bss_config *conf,
 	wconf->r0_key_lifetime = conf->r0_key_lifetime;
 	wconf->reassociation_deadline = conf->reassociation_deadline;
 	wconf->rkh_pos_timeout = conf->rkh_pos_timeout;
+	wconf->rkh_neg_timeout = conf->rkh_neg_timeout;
 	wconf->rkh_pull_timeout = conf->rkh_pull_timeout;
 	wconf->rkh_pull_retries = conf->rkh_pull_retries;
 	wconf->r0kh_list = &conf->r0kh_list;
