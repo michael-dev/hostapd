@@ -130,6 +130,7 @@ struct wpa_state_machine {
 	u8 ft_pending_pull_nonce[FT_R0KH_R1KH_PULL_NONCE_LEN];
 	u8 ft_pending_auth_transaction;
 	u8 ft_pending_current_ap[ETH_ALEN];
+	int ft_pending_pull_left_retries;
 #endif /* CONFIG_IEEE80211R */
 
 	int pending_1_of_4_timeout;
