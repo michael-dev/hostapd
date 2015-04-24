@@ -547,8 +547,19 @@ void wpa_ft_deinit(struct wpa_authenticator *wpa_auth)
 
 void wpa_ft_expire_pull(void *eloop_ctx, void *timeout_ctx)
 {
-	eloop_cancel_timeout(wpa_ft_expire_pull, eloop_ctx, NULL); /* cancel multiple timeouts */
-	eloop_cancel_timeout(ft_pull_resp_cb_finish, eloop_ctx, NULL);
+	struct wpa_state_machine *sm = eloop_ctx;
+	if (sm->ft_pending_pull_left_retries <= 0 &&
+	    sm->wpa_auth->conf.rkh_neg_timeout) {
+		/* final timeout, block this r0kh_id */
+		wpa_hexdump(MSG_DEBUG, "FT: Blacklist R0KH-ID",
+			    sm->r0kh_id, sm->r0kh_id_len);
+		wpa_ft_rrb_add_r0kh(sm->wpa_auth, NULL,
+				    (u8*) "\x00\x00\x00\x00\x00\x00",
+				    sm->r0kh_id, sm->r0kh_id_len,
+				    sm->wpa_auth->conf.rkh_neg_timeout);
+	}
+	eloop_cancel_timeout(wpa_ft_expire_pull, sm, NULL); /* cancel multiple timeouts */
+	eloop_cancel_timeout(ft_pull_resp_cb_finish, sm, NULL);
 	ft_pull_resp_cb_finish(eloop_ctx, timeout_ctx);
 }
 
@@ -585,6 +596,11 @@ static int wpa_ft_pull_pmk_r1(struct wpa_state_machine *sm,
 	}
 	if (r0kh == NULL) {
 		wpa_hexdump(MSG_DEBUG, "FT: Did not find R0KH-ID",
+			    sm->r0kh_id, sm->r0kh_id_len);
+		return -1;
+	}
+	if (is_zero_ether_addr(r0kh->addr)) {
+		wpa_hexdump(MSG_DEBUG, "FT: R0KH-ID is blacklisted",
 			    sm->r0kh_id, sm->r0kh_id_len);
 		return -1;
 	}
@@ -1827,17 +1843,17 @@ static int wpa_ft_rrb_rx_pull(struct wpa_authenticator *wpa_auth,
 				&pairwise, &vlan, &expiresIn) < 0) {
 		wpa_printf(MSG_DEBUG, "FT: No matching PMKR0Name found for "
 			   "PMK-R1 pull");
-		return -1;
+		r.expiresIn = 0xffff;
+	} else {
+		wpa_derive_pmk_r1(pmk_r0, f.pmk_r0_name, f.r1kh_id, f.s1kh_id,
+				  r.pmk_r1, r.pmk_r1_name);
+		wpa_hexdump_key(MSG_DEBUG, "FT: PMK-R1", r.pmk_r1, PMK_LEN);
+		wpa_hexdump(MSG_DEBUG, "FT: PMKR1Name", r.pmk_r1_name,
+			    WPA_PMK_NAME_LEN);
+		r.pairwise = host_to_le16(pairwise);
+		os_memcpy(&r.vlan, &vlan, FT_VLAN_DATA_LEN);
+		r.expiresIn = host_to_le16(expiresIn);
 	}
-
-	wpa_derive_pmk_r1(pmk_r0, f.pmk_r0_name, f.r1kh_id, f.s1kh_id,
-			  r.pmk_r1, r.pmk_r1_name);
-	wpa_hexdump_key(MSG_DEBUG, "FT: PMK-R1", r.pmk_r1, PMK_LEN);
-	wpa_hexdump(MSG_DEBUG, "FT: PMKR1Name", r.pmk_r1_name,
-		    WPA_PMK_NAME_LEN);
-	r.pairwise = host_to_le16(pairwise);
-	os_memcpy(&r.vlan, &vlan, FT_VLAN_DATA_LEN);
-	r.expiresIn = host_to_le16(expiresIn);
 	os_memset(r.pad, 0, sizeof(r.pad));
 
 	if (aes_wrap(r1kh->key, sizeof(r1kh->key),
@@ -1909,6 +1925,8 @@ static int ft_pull_resp_cb(struct wpa_state_machine *sm, void *ctx)
 	wpa_printf(MSG_DEBUG, "FT: Response to a pending pull request for "
 		   MACSTR " - process from timeout", MAC2STR(sm->addr));
 
+	if (frame->expiresIn == 0xffff)
+		sm->ft_pending_pull_left_retries = 0;
 	eloop_cancel_timeout(wpa_ft_expire_pull, sm, NULL);
 	eloop_cancel_timeout(ft_pull_resp_cb_finish, sm, NULL);
 
@@ -1984,22 +2002,36 @@ static int wpa_ft_rrb_rx_resp(struct wpa_authenticator *wpa_auth,
 	}
 
 	pairwise = le_to_host16(f.pairwise);
-	expiresIn = le_to_host16(f.expiresIn);
-	wpa_hexdump(MSG_DEBUG, "FT: PMK-R1 pull - nonce",
-		    f.nonce, sizeof(f.nonce));
-	wpa_printf(MSG_DEBUG, "FT: PMK-R1 pull - R1KH-ID=" MACSTR " S1KH-ID="
-		   MACSTR " pairwise=0x%x expiresIn=%d",
-		   MAC2STR(f.r1kh_id), MAC2STR(f.s1kh_id), pairwise, expiresIn);
-	wpa_hexdump_key(MSG_DEBUG, "FT: PMK-R1 pull - PMK-R1",
-			f.pmk_r1, PMK_LEN);
-	wpa_hexdump(MSG_DEBUG, "FT: PMK-R1 pull - PMKR1Name",
-			f.pmk_r1_name, WPA_PMK_NAME_LEN);
-	wpa_printf(MSG_DEBUG, "FT: PMK-R1 pull - vlan %d%s", le_to_host16(f.vlan.untagged), f.vlan.tagged[0] ? "+" : "");
+	if (f.expiresIn == 0xffff) {
+		res = 0;
+		wpa_hexdump(MSG_DEBUG, "FT: PMK-R1 pull - nonce",
+			    f.nonce, sizeof(f.nonce));
+		wpa_printf(MSG_DEBUG, "FT: PMK-R1 pull - R1KH-ID=" MACSTR
+			   " S1KH-ID=" MACSTR " NACK",
+			   MAC2STR(f.r1kh_id), MAC2STR(f.s1kh_id));
+	} else {
+		expiresIn = le_to_host16(f.expiresIn);
+		wpa_hexdump(MSG_DEBUG, "FT: PMK-R1 pull - nonce",
+			    f.nonce, sizeof(f.nonce));
+		wpa_printf(MSG_DEBUG, "FT: PMK-R1 pull - R1KH-ID=" MACSTR
+			   " S1KH-ID=" MACSTR " pairwise=0x%x expiresIn=%d",
+			   MAC2STR(f.r1kh_id), MAC2STR(f.s1kh_id), pairwise,
+			   expiresIn);
+		wpa_hexdump_key(MSG_DEBUG, "FT: PMK-R1 pull - PMK-R1",
+				f.pmk_r1, PMK_LEN);
+		wpa_hexdump(MSG_DEBUG, "FT: PMK-R1 pull - PMKR1Name",
+				f.pmk_r1_name, WPA_PMK_NAME_LEN);
+		wpa_printf(MSG_DEBUG, "FT: PMK-R1 pull - vlan %d%s",
+			   le_to_host16(f.vlan.untagged),
+			   f.vlan.tagged[0] ? "+" : "");
 
-	if (expiresIn <= 0 || expiresIn > maxExpiresIn)
-		expiresIn = maxExpiresIn;
-	res = wpa_ft_store_pmk_r1(wpa_auth, f.s1kh_id, f.pmk_r1, f.pmk_r1_name,
-				  pairwise, f.vlan, expiresIn);
+		if (expiresIn <= 0 || expiresIn > maxExpiresIn)
+			expiresIn = maxExpiresIn;
+		res = wpa_ft_store_pmk_r1(wpa_auth, f.s1kh_id, f.pmk_r1,
+					  f.pmk_r1_name, pairwise, f.vlan,
+					  expiresIn);
+	}
+
 	wpa_printf(MSG_DEBUG, "FT: Look for pending pull request");
 
 	ctx.frame = &f;
