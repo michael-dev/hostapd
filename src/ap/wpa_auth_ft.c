@@ -1181,6 +1181,9 @@ wpa_ft_rrb_add_r0kh(struct wpa_authenticator *wpa_auth,
 		eloop_register_timeout(timeout, 0, wpa_ft_rrb_del_r0kh,
 				       wpa_auth, r0kh);
 
+	if (wpa_ft_rrb_init_r0kh_seq(r0kh) < 0)
+		return NULL;
+
 	return r0kh;
 }
 
@@ -1244,6 +1247,9 @@ wpa_ft_rrb_add_r1kh(struct wpa_authenticator *wpa_auth,
 	if (timeout > 0)
 		eloop_register_timeout(timeout, 0, wpa_ft_rrb_del_r1kh,
 				       wpa_auth, r1kh);
+
+	if (wpa_ft_rrb_init_r1kh_seq(r1kh) < 0)
+		return NULL;
 
 	return r1kh;
 }
