@@ -28,6 +28,8 @@ int linux_br_add_vlan(int sock, const char *ifname, int untagged, int numtagged,
 		      int *tagged);
 int linux_br_del_vlan(int sock, const char *ifname, int untagged, int numtagged,
 		      int *tagged);
+int linux_br_fdb_add(int sock, const char *br_name, const u8* mac);
+int linux_br_fdb_del(int sock, const char *br_name, const u8* mac);
 #endif
 int linux_ioctl_socket();
 void linux_ioctl_close(int sock);
