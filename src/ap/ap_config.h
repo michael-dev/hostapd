@@ -138,6 +138,9 @@ struct hostapd_vlan {
 	char bridge[IFNAMSIZ + 1];
 	int configured;
 	int dynamic_vlan;
+#ifdef CONFIG_RSN_PREAUTH_COPY
+	void* rsn_preauth;
+#endif /* CONFIG_RSN_PREAUTH_COPY */
 #ifdef CONFIG_FULL_DYNAMIC_VLAN
 
 #define DVLAN_CLEAN_WLAN_PORT	0x8
@@ -384,6 +387,9 @@ struct hostapd_bss_config {
 	int rsn_preauth;
 	char *rsn_preauth_interfaces;
 	int rsn_preauth_autoconf_bridge;
+#ifdef CONFIG_RSN_PREAUTH_COPY
+	char rsn_preauth_copy_iface[IFNAMSIZ+1];
+#endif /* CONFIG_RSN_PREAUTH_COPY */
 
 #ifdef CONFIG_IEEE80211R_AP
 	/* IEEE 802.11r - Fast BSS Transition */
