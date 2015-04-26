@@ -22,6 +22,10 @@
 #include "sta_info.h"
 #include "wpa_auth.h"
 #include "preauth_auth.h"
+#if CONFIG_RSN_PREAUTH_MACVLAN
+#include "macvlan.h"
+#include "vlan_ifconfig.h"
+#endif /* CONFIG_RSN_PREAUTH_MACVLAN */
 
 #ifndef ETH_P_PREAUTH
 #define ETH_P_PREAUTH 0x88C7 /* IEEE 802.11i pre-authentication */
@@ -35,6 +39,9 @@ struct rsn_preauth_interface {
 	struct l2_packet_data *l2;
 	char *ifname;
 	int ifindex;
+#if CONFIG_RSN_PREAUTH_MACVLAN
+	int is_macvlan;
+#endif /* CONFIG_RSN_PREAUTH_MACVLAN */
 };
 
 
@@ -94,9 +101,13 @@ static void rsn_preauth_receive(void *ctx, const u8 *src_addr,
 }
 
 
-static int rsn_preauth_iface_add(struct hostapd_data *hapd, const char *ifname)
+static int rsn_preauth_iface_add(struct hostapd_data *hapd, const char *ifname,
+				 int idx)
 {
 	struct rsn_preauth_interface *piface;
+#ifdef CONFIG_RSN_PREAUTH_MACVLAN
+	char macvlan_iface[IFNAMSIZ+1];
+#endif /* CONFIG_RSN_PREAUTH_MACVLAN */
 
 	wpa_printf(MSG_DEBUG, "RSN pre-auth interface '%s'", ifname);
 
@@ -104,6 +115,19 @@ static int rsn_preauth_iface_add(struct hostapd_data *hapd, const char *ifname)
 	if (piface == NULL)
 		return -1;
 	piface->hapd = hapd;
+
+#ifdef CONFIG_RSN_PREAUTH_MACVLAN
+	snprintf(macvlan_iface, sizeof(macvlan_iface), "pre%d%s",
+		 idx, hapd->conf->iface);
+	if (macvlan_add(macvlan_iface, hapd->own_addr, ifname) < 0 ||
+	    ifconfig_up(macvlan_iface) < 0) {
+		wpa_printf(MSG_ERROR, "Failed to add bssid to "
+			   "rsn_preauth_interface %s", ifname);
+	} else {
+		piface->is_macvlan = 1;
+		ifname = macvlan_iface;
+	}
+#endif /* CONFIG_RSN_PREAUTH_MACVLAN */
 
 	piface->ifname = os_strdup(ifname);
 	if (piface->ifname == NULL) {
@@ -139,6 +163,12 @@ void rsn_preauth_iface_deinit(struct hostapd_data *hapd)
 	while (piface) {
 		prev = piface;
 		piface = piface->next;
+#ifdef CONFIG_RSN_PREAUTH_MACVLAN
+		if (prev->is_macvlan) {
+			ifconfig_down(prev->ifname);
+			macvlan_del(prev->ifname);
+		}
+#endif /* CONFIG_RSN_PREAUTH_MACVLAN */
 		l2_packet_deinit(prev->l2);
 		os_free(prev->ifname);
 		os_free(prev);
@@ -149,6 +179,7 @@ void rsn_preauth_iface_deinit(struct hostapd_data *hapd)
 int rsn_preauth_iface_init(struct hostapd_data *hapd)
 {
 	char *tmp, *start, *end;
+	int i = 0;
 
 	if (hapd->conf->rsn_preauth_interfaces == NULL)
 		return 0;
@@ -166,7 +197,7 @@ int rsn_preauth_iface_init(struct hostapd_data *hapd)
 		if (end)
 			*end = '\0';
 
-		if (rsn_preauth_iface_add(hapd, start)) {
+		if (rsn_preauth_iface_add(hapd, start, i++)) {
 			rsn_preauth_iface_deinit(hapd);
 			os_free(tmp);
 			return -1;
