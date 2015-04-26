@@ -278,7 +278,7 @@ ifdef CONFIG_L2_FREEBSD
 LIBS += -lpcap
 OBJS += ../src/l2_packet/l2_packet_freebsd.o
 else
-LIBS += -ldnet -lpcap
+LIBS += -ldumbnet -lpcap
 OBJS += ../src/l2_packet/l2_packet_pcap.o
 endif
 else

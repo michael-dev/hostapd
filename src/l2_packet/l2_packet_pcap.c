@@ -12,7 +12,7 @@
 #endif /* CONFIG_NATIVE_WINDOWS */
 #include <pcap.h>
 #ifndef CONFIG_WINPCAP
-#include <dnet.h>
+#include <dumbnet.h>
 #endif /* CONFIG_WINPCAP */
 
 #include "common.h"
