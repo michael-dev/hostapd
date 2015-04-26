@@ -47,6 +47,9 @@ CONFIG_LIBNL32=y
 # WPA2/IEEE 802.11i RSN pre-authentication
 CONFIG_RSN_PREAUTH=y
 
+# WPA2/IEEE 802.11i RSN pre-authentication full-dynamic packet copy
+CONFIG_RSN_PREAUTH_COPY=y
+
 # Support Operating Channel Validation
 #CONFIG_OCV=y
 
