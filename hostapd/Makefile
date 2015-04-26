@@ -152,6 +152,19 @@ else
 OBJS += ../src/ap/accounting.o
 endif
 
+ifndef CONFIG_NO_VLAN
+NEED_BRIDGE=y
+NEED_IFCONFIG=y
+endif
+
+ifdef NEED_BRIDGE
+OBJS += ../src/ap/bridge.o
+endif
+
+ifdef NEED_IFCONFIG
+OBJS += ../src/ap/ifconfig.o
+endif
+
 ifdef CONFIG_NO_VLAN
 CFLAGS += -DCONFIG_NO_VLAN
 else
