@@ -2903,3 +2903,42 @@ def test_ap_ft_pmksa_caching_sha384(dev, apdev):
 
     run_roams(dev[0], apdev, hapd, hapd1, ssid, None, eap=True,
               eap_identity=identity, pmksa_caching=True, sha384=True)
+
+def test_ap_ft_bridge(dev, apdev):
+    """FT AP bridge"""
+    ssid = "test-ft"
+    passphrase="12345678"
+
+    try:
+        subprocess.call(['brctl', 'addbr', "brft"])
+        subprocess.call(['brctl', 'setfd', "brft", '0'])
+        subprocess.call(['ip', 'link', 'set', 'dev', "brft", 'up'])
+
+        params = ft_params1(ssid=ssid, passphrase=passphrase)
+        params["ft_bridge"] = "brft"
+        hapd = hostapd.add_ap(apdev[0]['ifname'], params)
+        bssid = hapd.own_addr()
+
+        res = subprocess.check_output(['bridge', 'fdb', 'show', 'dev', 'brft', 'state', 'permanent']).decode()
+        found = False
+        for r in res.splitlines():
+            if r.startswith(bssid+ " "):
+                found = True
+                break
+        if not found:
+            raise Exception("brft has no fdb entry for bssid")
+
+        hapd.request("DISABLE")
+        time.sleep(5)
+
+        res = subprocess.check_output(['bridge', 'fdb', 'show', 'dev', 'brft', 'state', 'permanent']).decode()
+        found = False
+        for r in res.splitlines():
+            if r.startswith(bssid+ " "):
+                found = True
+                break
+        if found:
+            raise Exception("brft still has fdb entry for bssid")
+    finally:
+        subprocess.call(['ip', 'link', 'set', 'dev', "brft", 'down'])
+        subprocess.call(['brctl', 'delbr', "brft"])
