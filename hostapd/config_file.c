@@ -2448,6 +2448,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 	} else if (os_strcmp(buf, "rsn_preauth_interfaces") == 0) {
 		os_free(bss->rsn_preauth_interfaces);
 		bss->rsn_preauth_interfaces = os_strdup(pos);
+	} else if (os_strcmp(buf, "rsn_preauth_autoconf_bridge") == 0) {
+		bss->rsn_preauth_autoconf_bridge = atoi(pos);
 #endif /* CONFIG_RSN_PREAUTH */
 #ifdef CONFIG_PEERKEY
 	} else if (os_strcmp(buf, "peerkey") == 0) {

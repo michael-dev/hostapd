@@ -309,6 +309,7 @@ struct hostapd_bss_config {
 	int rsn_pairwise;
 	int rsn_preauth;
 	char *rsn_preauth_interfaces;
+	int rsn_preauth_autoconf_bridge;
 	int peerkey;
 
 #ifdef CONFIG_IEEE80211R

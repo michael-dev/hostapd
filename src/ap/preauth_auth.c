@@ -22,6 +22,9 @@
 #include "sta_info.h"
 #include "wpa_auth.h"
 #include "preauth_auth.h"
+#include "bridge.h"
+#include "dummy.h"
+#include "ifconfig.h"
 
 #ifndef ETH_P_PREAUTH
 #define ETH_P_PREAUTH 0x88C7 /* IEEE 802.11i pre-authentication */
@@ -97,8 +100,24 @@ static void rsn_preauth_receive(void *ctx, const u8 *src_addr,
 static int rsn_preauth_iface_add(struct hostapd_data *hapd, const char *ifname)
 {
 	struct rsn_preauth_interface *piface;
+	char dummy_iface[IFNAMSIZ+1];
 
 	wpa_printf(MSG_DEBUG, "RSN pre-auth interface '%s'", ifname);
+
+	if (hapd->conf->rsn_preauth_autoconf_bridge) {
+#ifdef CONFIG_LIBNL3_ROUTE
+		snprintf(dummy_iface, sizeof(dummy_iface), "pre%s",
+			 hapd->conf->iface);
+		if (dummy_add(dummy_iface, hapd->own_addr) < 0 ||
+		    ifconfig_up(dummy_iface) < 0 ||
+		    br_addif(ifname, dummy_iface) < 0)
+			wpa_printf(MSG_ERROR, "Failed to add bssid to "
+				   "rsn_preauth_interface %s", ifname);
+#else
+		wpa_printf(MSG_ERROR, "Missing libnl3 - bssid not added to "
+			   "rsn_preauth_interface %s", ifname);
+#endif /* CONFIG_LIBNL3_ROUTE */
+	}
 
 	piface = os_zalloc(sizeof(*piface));
 	if (piface == NULL)
@@ -133,12 +152,22 @@ fail1:
 void rsn_preauth_iface_deinit(struct hostapd_data *hapd)
 {
 	struct rsn_preauth_interface *piface, *prev;
+	char dummy_iface[IFNAMSIZ+1];
 
 	piface = hapd->preauth_iface;
 	hapd->preauth_iface = NULL;
 	while (piface) {
 		prev = piface;
 		piface = piface->next;
+		if (hapd->conf->rsn_preauth_autoconf_bridge) {
+#ifdef CONFIG_LIBNL3_ROUTE
+			snprintf(dummy_iface, sizeof(dummy_iface), "pre%s",
+				 hapd->conf->iface);
+			ifconfig_down(dummy_iface);
+			br_delif(prev->ifname, dummy_iface);
+			dummy_del(dummy_iface);
+#endif /* CONFIG_LIBNL3_ROUTE */
+		}
 		l2_packet_deinit(prev->l2);
 		os_free(prev->ifname);
 		os_free(prev);

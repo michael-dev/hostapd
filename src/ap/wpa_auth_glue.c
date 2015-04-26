@@ -765,7 +765,9 @@ int hostapd_setup_wpa(struct hostapd_data *hapd)
 	size_t wpa_ie_len;
 #ifdef CONFIG_IEEE80211R
 	const char* ft_iface;
+#ifdef CONFIG_LIBNL3_ROUTE
 	char dummy_iface[IFNAMSIZ+1];
+#endif /* CONFIG_LIBNL3_ROUTE */
 #endif /* CONFIG_IEEE80211R */
 
 	hostapd_wpa_auth_conf(hapd->conf, hapd->iconf, &_conf);
@@ -877,9 +879,9 @@ void hostapd_reconfig_wpa(struct hostapd_data *hapd)
 
 void hostapd_deinit_wpa(struct hostapd_data *hapd)
 {
-#ifdef CONFIG_IEEE80211R
+#ifdef CONFIG_LIBNL3_ROUTE
 	char dummy_iface[IFNAMSIZ+1];
-#endif /* CONFIG_IEEE80211R */
+#endif /* CONFIG_LIBNL3_ROUTE */
 
 	ieee80211_tkip_countermeasures_deinit(hapd);
 	rsn_preauth_iface_deinit(hapd);
