@@ -12,6 +12,7 @@
 #include <net/if_arp.h>
 #include <netlink/msg.h>
 #include <netlink/attr.h>
+#include <netlink/route/neighbour.h>
 #include <netlink/route/link.h>
 #include <netlink/route/link/bridge.h>
 #include "linux/if_bridge.h"
@@ -533,6 +534,58 @@ int linux_br_del_vlan(int sock, const char *ifname, int untagged,
 		      int numtagged, int *tagged)
 {
 	return _linux_br_vlan(sock, ifname, 0, untagged, numtagged, tagged);
+}
+
+static int _linux_br_fdb(int add, const char *br_name, const u8* mac)
+{
+	struct rtnl_neigh *neigh = NULL;
+	struct rtnl_link *link = NULL;
+	struct nl_addr* nl_addr = NULL;
+	int ret = -1;
+
+	if (rtnl_link_get_kernel(global_nl, 0, br_name, &link) < 0)
+		goto err;
+
+	neigh = rtnl_neigh_alloc();
+	if (!neigh)
+		goto err;
+
+	nl_addr = nl_addr_build(AF_BRIDGE, (u8 *) mac, ETH_ALEN);
+	if (nl_addr == NULL)
+		goto err;
+	rtnl_neigh_set_family(neigh, AF_BRIDGE);
+	rtnl_neigh_set_ifindex(neigh, rtnl_link_get_ifindex(link));
+	rtnl_neigh_set_lladdr(neigh, nl_addr);
+	rtnl_neigh_set_state(neigh, NUD_PERMANENT);
+	rtnl_neigh_set_flags(neigh, NTF_SELF);
+	if (add) {
+		/* may add NLM_F_EXCL or NLM_F_APPEND */
+		if (rtnl_neigh_add(global_nl, neigh, NLM_F_CREATE) < 0)
+			goto err;
+	} else if (rtnl_neigh_delete(global_nl, neigh, 0) < 0)
+			goto err;
+
+	ret = 0;
+err:
+	if (link)
+		rtnl_link_put(link);
+	if (neigh)
+		rtnl_neigh_put(neigh);
+	if (nl_addr)
+		nl_addr_put(nl_addr);
+
+	return ret;
+}
+int linux_br_fdb_add(int sock, const char *br_name, const u8* mac)
+{
+	assert(sock == global_sock);
+	return _linux_br_fdb(1, br_name, mac);
+}
+
+int linux_br_fdb_del(int sock, const char *br_name, const u8* mac)
+{
+	assert(sock == global_sock);
+	return _linux_br_fdb(0, br_name, mac);
 }
 
 int linux_ioctl_socket()

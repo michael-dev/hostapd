@@ -22,6 +22,7 @@
 #include "sta_info.h"
 #include "wpa_auth.h"
 #include "preauth_auth.h"
+#include "drivers/linux_ioctl.h"
 
 #ifndef ETH_P_PREAUTH
 #define ETH_P_PREAUTH 0x88C7 /* IEEE 802.11i pre-authentication */
@@ -100,6 +101,21 @@ static int rsn_preauth_iface_add(struct hostapd_data *hapd, const char *ifname)
 
 	wpa_printf(MSG_DEBUG, "RSN pre-auth interface '%s'", ifname);
 
+	if (hapd->conf->rsn_preauth_autoconf_bridge) {
+#ifdef HAVE_LINUX_IOCTL_NEWLINK
+		int sock = linux_ioctl_socket();
+		if (sock < 0 ||
+		    linux_br_fdb_add(sock, ifname, hapd->own_addr) < 0)
+			wpa_printf(MSG_ERROR, "Failed to add bssid to "
+				   "rsn_preauth_interface %s", ifname);
+		if (sock >= 0)
+			linux_ioctl_close(sock);
+#else
+		wpa_printf(MSG_ERROR, "Missing CONFIG_LINUX_IOCTL_NEWLINK - bssid not added to "
+			   "rsn_preauth_interface %s", ifname);
+#endif /* HAVE_LINUX_IOCTL_NEWLINK */
+	}
+
 	piface = os_zalloc(sizeof(*piface));
 	if (piface == NULL)
 		return -1;
@@ -139,6 +155,18 @@ void rsn_preauth_iface_deinit(struct hostapd_data *hapd)
 	while (piface) {
 		prev = piface;
 		piface = piface->next;
+		if (hapd->conf->rsn_preauth_autoconf_bridge) {
+#ifdef HAVE_LINUX_IOCTL_NEWLINK
+			int sock = linux_ioctl_socket();
+			const char *ifname = prev->ifname;
+			if (sock < 0 ||
+			    linux_br_fdb_del(sock, ifname, hapd->own_addr) < 0)
+				wpa_printf(MSG_ERROR, "Failed to remove bssid from "
+				   "rsn_preauth_interface %s", ifname);
+			if (sock >= 0)
+				linux_ioctl_close(sock);
+#endif /* HAVE_LINUX_IOCTL_NEWLINK */
+		}
 		l2_packet_deinit(prev->l2);
 		os_free(prev->ifname);
 		os_free(prev);
