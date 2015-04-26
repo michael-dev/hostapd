@@ -471,9 +471,10 @@ def run_pmksa_cache_preauth_auto(dev, apdev):
         raise Exception("The expected PMKSA cache entries not found")
 
 def generic_pmksa_cache_preauth(dev, apdev, extraparams, identity, databridge,
-                                force_disconnect=False):
+                                force_disconnect=False, databridgevlan=False):
     if not extraparams:
         extraparams = [{}, {}]
+    origdatabridge = False
     try:
         params = hostapd.wpa2_eap_params(ssid="test-wpa2-eap")
         params['bridge'] = 'ap-br0'
@@ -485,6 +486,15 @@ def generic_pmksa_cache_preauth(dev, apdev, extraparams, identity, databridge,
         hapd.cmd_execute(['ip', 'link', 'set', 'dev', 'ap-br0', 'up'])
         eap_connect(dev[0], hapd, "PAX", identity,
                     password_hex="0123456789abcdef0123456789abcdef")
+
+        # handle VLANs
+        if databridgevlan != False:
+            origdatabridge = databridge
+            databridge = databridge + '.' + databridgevlan
+            subprocess.call(['bridge', 'vlan', 'add', 'dev', origdatabridge, 'vid', databridgevlan,'self']);
+            subprocess.call(['ip', 'link', 'add', 'link', origdatabridge, 'name', databridge,
+                             'type', 'vlan', 'id', databridgevlan])
+            subprocess.call(['ifconfig', databridge, 'up'])
 
         # Verify connectivity in the correct VLAN
         hwsim_utils.test_connectivity_iface(dev[0], hapd, databridge)
@@ -545,6 +555,11 @@ def generic_pmksa_cache_preauth(dev, apdev, extraparams, identity, databridge,
         hapd.request("DISABLE")
 
     finally:
+        if origdatabridge != False:
+            subprocess.call(['ifconfig', databridge, 'down'])
+            subprocess.call(['ip', 'link', 'del', 'link', 'dev', databridge])
+            subprocess.call(['bridge', 'vlan', 'del', 'dev', origdatabridge, 'vid', databridgevlan,'self']);
+
         hostapd.cmd_execute(apdev[0], ['ip', 'link', 'set', 'dev',
                                        'ap-br0', 'down', '2>', '/dev/null'],
                             shell=True)
@@ -581,6 +596,60 @@ def test_pmksa_cache_preauth_vlan_enabled_per_sta_vif(dev, apdev):
     extraparams[1]['dynamic_vlan'] = '1'
     generic_pmksa_cache_preauth(dev, apdev, extraparams,
                                 "pax.user@example.com", "ap-br0")
+
+def test_pmksa_cache_preauth_vlan_used_full_dynamic(dev, apdev, p, extraparams = None):
+    """RSN pre-authentication to generate PMKSA cache entry (dynamic_vlan optional and station with VLAN set, full dynamic vlan)"""
+    try:
+        subprocess.call(['brctl', 'addbr', 'brpre'])
+        subprocess.call(['brctl', 'setfd', 'brpre', '0'])
+        subprocess.call(['ip', 'link', 'set', 'dev', 'brpre', 'up'])
+        subprocess.call(['ip','link','add','pre0','type','veth','peer','name','pre1'])
+        subprocess.call(['ip', 'link', 'set', 'dev', 'pre0', 'up'])
+        subprocess.call(['ip', 'link', 'set', 'dev', 'pre1', 'up'])
+        subprocess.call(['brctl', 'addif', 'brpre','pre1'])
+        if not extraparams:
+            extraparams = [{}, {}]
+        extraparams[0]['dynamic_vlan'] = '1'
+        extraparams[0]['rsn_preauth_copy_iface'] = 'pre0'
+        extraparams[1]['dynamic_vlan'] = '1'
+        extraparams[1]['rsn_preauth_interfaces'] = 'brpre'
+        extraparams[1]['rsn_preauth_autoconf_bridge'] = '1'
+        generic_pmksa_cache_preauth(dev, apdev, extraparams,
+                                        "vlan1", "brvlan1")
+    finally:
+        subprocess.call(['ip', 'link', 'set', 'dev', 'pre1', 'down'])
+        subprocess.call(['ip', 'link', 'set', 'dev', 'pre0', 'down'])
+        subprocess.call(['ip', 'link', 'del', 'dev', 'pre0'])
+        subprocess.call(['ip', 'link', 'set', 'dev', 'brpre', 'down'])
+        subprocess.call(['brctl', 'delbr', 'brpre'])
+
+def test_pmksa_cache_preauth_vlan_used_full_dynamic_2(dev, apdev, p, extraparams = None):
+    """RSN pre-authentication to generate PMKSA cache entry (dynamic_vlan optional and station with VLAN set, full dynamic vlan) and vlan filtering"""
+    try:
+        subprocess.call(['brctl', 'addbr', 'brpre'])
+        subprocess.call(['brctl', 'setfd', 'brpre', '0'])
+        subprocess.call(['ip', 'link', 'set', 'dev', 'brpre', 'up'])
+        subprocess.call(['ip','link','add','pre0','type','veth','peer','name','pre1'])
+        subprocess.call(['ip', 'link', 'set', 'dev', 'pre0', 'up'])
+        subprocess.call(['ip', 'link', 'set', 'dev', 'pre1', 'up'])
+        subprocess.call(['brctl', 'addif', 'brpre','pre1'])
+        if not extraparams:
+            extraparams = [{}, {}]
+        extraparams[0]['dynamic_vlan'] = '1'
+        extraparams[0]['rsn_preauth_copy_iface'] = 'pre0'
+        extraparams[0]['bridge_vlan_filtering'] = '1'
+        extraparams[1]['dynamic_vlan'] = '1'
+        extraparams[1]['rsn_preauth_interfaces'] = 'brpre'
+        extraparams[1]['rsn_preauth_autoconf_bridge'] = '1'
+        extraparams[1]['bridge_vlan_filtering'] = '1'
+        generic_pmksa_cache_preauth(dev, apdev, extraparams,
+                                        "vlan1", "brvlan", databridgevlan="1")
+    finally:
+        subprocess.call(['ip', 'link', 'set', 'dev', 'pre1', 'down'])
+        subprocess.call(['ip', 'link', 'set', 'dev', 'pre0', 'down'])
+        subprocess.call(['ip', 'link', 'del', 'dev', 'pre0'])
+        subprocess.call(['ip', 'link', 'set', 'dev', 'brpre', 'down'])
+        subprocess.call(['brctl', 'delbr', 'brpre'])
 
 def test_pmksa_cache_preauth_vlan_used(dev, apdev):
     """RSN pre-authentication to generate PMKSA cache entry (station with VLAN set)"""
