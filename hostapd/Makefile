@@ -198,6 +198,11 @@ endif
 ifdef CONFIG_RSN_PREAUTH
 CFLAGS += -DCONFIG_RSN_PREAUTH
 CONFIG_L2_PACKET=y
+ifdef CONFIG_RSN_PREAUTH_COPY
+CFLAGS += -DCONFIG_RSN_PREAUTH_COPY
+OBJS += ../src/ap/l2_snoop_pcap.o
+LIBS += -lpcap
+endif
 endif
 
 ifdef CONFIG_PEERKEY

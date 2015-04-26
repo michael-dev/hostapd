@@ -18,6 +18,11 @@ void rsn_preauth_finished(struct hostapd_data *hapd, struct sta_info *sta,
 void rsn_preauth_send(struct hostapd_data *hapd, struct sta_info *sta,
 		      u8 *buf, size_t len);
 void rsn_preauth_free_station(struct hostapd_data *hapd, struct sta_info *sta);
+#ifdef CONFIG_RSN_PREAUTH_COPY
+void* rsn_preauth_snoop_init(struct hostapd_data *hapd, char* ifname);
+void rsn_preauth_snoop_deinit(struct hostapd_data *hapd, char* ifname,
+			      void *ctx);
+#endif /* CONFIG_RSN_PREAUTH_COPY */
 
 #else /* CONFIG_RSN_PREAUTH */
 
@@ -46,6 +51,19 @@ static inline void rsn_preauth_free_station(struct hostapd_data *hapd,
 					    struct sta_info *sta)
 {
 }
+
+#ifdef CONFIG_RSN_PREAUTH_COPY
+static inline void* rsn_preauth_snoop_init(struct hostapd_data *hapd,
+					   char* ifname)
+{
+	return NULL;
+}
+
+static inline void rsn_preauth_snoop_deinit(struct hostapd_data *hapd,
+					    char* ifname, void *ctx)
+{
+}
+#endif /* CONFIG_RSN_PREAUTH_COPY */
 
 #endif /* CONFIG_RSN_PREAUTH */
 
