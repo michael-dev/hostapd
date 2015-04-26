@@ -497,6 +497,25 @@ def test_pmksa_cache_preauth_vlan_enabled_per_sta_vif(dev, apdev):
     generic_pmksa_cache_preauth(dev, apdev, extraparams,
                                 "pax.user@example.com", "ap-br0")
 
+def test_pmksa_cache_preauth_vlan_used_full_dynamic(dev, apdev, p, extraparams = None):
+    """RSN pre-authentication to generate PMKSA cache entry (dynamic_vlan optional and station with VLAN set, full dynamic vlan)"""
+    try:
+        subprocess.call(['ip', 'link', 'add', 'dev', 'ap-pre0', 'type', 'veth', 'peer', 'name', 'ap-pre1'])
+        subprocess.call(['ip', 'link', 'set', 'dev', 'ap-pre0', 'up'])
+        subprocess.call(['ip', 'link', 'set', 'dev', 'ap-pre1', 'up'])
+        if not extraparams:
+            extraparams = [{}, {}]
+        extraparams[0]['dynamic_vlan'] = '1'
+        extraparams[0]['rsn_preauth_copy_iface'] = 'ap-pre0'
+        extraparams[1]['dynamic_vlan'] = '1'
+        extraparams[1]['rsn_preauth_interfaces'] = 'ap-pre1'
+        generic_pmksa_cache_preauth(dev, apdev, extraparams,
+                                        "vlan1", "brvlan1")
+    finally:
+        subprocess.call(['ip', 'link', 'set', 'dev', 'ap-pre0', 'down'])
+        subprocess.call(['ip', 'link', 'set', 'dev', 'ap-pre1', 'down'])
+        subprocess.call(['ip', 'link', 'del', 'ap-pre0'])
+
 def test_pmksa_cache_preauth_vlan_used(dev, apdev):
     """RSN pre-authentication to generate PMKSA cache entry (station with VLAN set)"""
     run_pmksa_cache_preauth_vlan_used(dev, apdev, None, force_disconnect=True)
