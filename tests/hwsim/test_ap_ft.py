@@ -13,7 +13,8 @@ logger = logging.getLogger()
 
 import hwsim_utils
 import hostapd
-from utils import HwsimSkip
+import netifaces
+from utils import HwsimSkip, iface_is_in_bridge
 from wlantest import Wlantest
 from test_ap_psk import check_mib, find_wpas_process, read_process_memory, verify_not_present, get_key_locations
 
@@ -728,3 +729,34 @@ def test_ft_psk_key_lifetime_in_memory(dev, apdev, params):
     verify_not_present(buf, kek, fname, "KEK")
     verify_not_present(buf, tk, fname, "TK")
     verify_not_present(buf, gtk, fname, "GTK")
+
+def test_ap_ft_bridge(dev, apdev):
+    """FT AP bridge"""
+    ssid = "test-ft"
+    passphrase="12345678"
+
+    try:
+        subprocess.call(['brctl', 'addbr', "brft"])
+        subprocess.call(['brctl', 'setfd', "brft", '0'])
+        subprocess.call(['ip', 'link', 'set', 'dev', "brft", 'up'])
+
+        params = ft_params1(ssid=ssid, passphrase=passphrase)
+        params["ft_bridge"] = "brft"
+        hapd = hostapd.add_ap(apdev[0]['ifname'], params)
+
+        if not iface_is_in_bridge("brft", "ftwlan3"):
+            raise Exception("ftwlan3 not in brft")
+
+        hapd.request("DISABLE")
+        time.sleep(5)
+
+        if iface_is_in_bridge("brft", "ftwlan3"):
+            raise Exception("ftwlan3 in brft")
+
+        ifaces = netifaces.interfaces()
+        if "ftwlan3" in ifaces:
+            raise Exception("device ftwlan3 has not been cleaned up")
+    finally:
+        subprocess.call(['ip', 'link', 'set', 'dev', "brft", 'down'])
+        subprocess.call(['brctl', 'delbr', "brft"])
+
