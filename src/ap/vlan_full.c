@@ -27,6 +27,9 @@
 #include "wpa_auth.h"
 #include "vlan_init.h"
 #include "vlan_util.h"
+#ifdef CONFIG_RSN_PREAUTH_COPY
+#include "preauth_auth.h"
+#endif /* CONFIG_RSN_PREAUTH_COPY */
 
 
 struct full_dynamic_vlan {
@@ -834,6 +837,11 @@ void vlan_newlink(const char *ifname, struct hostapd_data *hapd)
 		br_vlan_cache_commit();
 
 	ifconfig_up(ifname);
+
+#ifdef CONFIG_RSN_PREAUTH_COPY
+	if (!vlan->rsn_preauth)
+		vlan->rsn_preauth = rsn_preauth_snoop_init(hapd, vlan->ifname);
+#endif /* CONFIG_RSN_PREAUTH_COPY */
 }
 
 
@@ -928,6 +936,13 @@ void vlan_dellink(const char *ifname, struct hostapd_data *hapd)
 	}
 	if (!vlan)
 		return;
+
+#ifdef CONFIG_RSN_PREAUTH_COPY
+	if (vlan->rsn_preauth) {
+		rsn_preauth_snoop_deinit(hapd, vlan->ifname, vlan->rsn_preauth);
+		vlan->rsn_preauth = NULL;
+	}
+#endif /* CONFIG_RSN_PREAUTH_COPY */
 
 	if (vlan->configured) {
 		int notempty = vlan->vlan_desc.notempty;
