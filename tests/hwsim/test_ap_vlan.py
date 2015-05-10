@@ -343,6 +343,35 @@ def helper_ap_vlan_iface_cleanup_multibss_cleanup():
     subprocess.call(['ip','link','del','brvlan2'],
                     stderr=open('/dev/null', 'w'))
 
+def helper_ap_vlan_iface_test_and_prepare_environ():
+    ifaces = netifaces.interfaces()
+    if "dummy0" in ifaces:
+        raise Exception("dummy0 already exists before")
+    ifaces = netifaces.interfaces()
+    if "dummy0.1" in ifaces:
+        raise Exception("dummy0.1 already exists before")
+
+    subprocess.call(['ip','link','add','dummy0','type','dummy'])
+    subprocess.call(['ifconfig','dummy0','up'])
+
+    ifaces = netifaces.interfaces()
+    if not("dummy0" in ifaces):
+        raise Exception("failed to add dummy0 - missing kernel config DUMMY ?")
+
+    subprocess.call(['ip','link','add','link','dummy0','name','dummy0.1',
+                     'type','vlan','id','1'])
+
+    ifaces = netifaces.interfaces()
+    if not("dummy0.1" in ifaces):
+        raise Exception("failed to add dummy0.1 - missing kernel config "
+                        "VLAN_8021Q ?")
+
+    subprocess.call(['ip','link','del','dummy0.1'])
+
+    ifaces = netifaces.interfaces()
+    if "dummy0.1" in ifaces:
+        raise Exception("dummy0.1 was not removed before testing")
+
 def test_ap_vlan_iface_cleanup_multibss(dev, apdev, p, cfgfile='multi-bss-iface.conf'):
     """AP VLAN with WPA2-Enterprise and RADIUS attributes changing VLANID
        check that multiple bss do not interfere with each other with respect
@@ -350,8 +379,7 @@ def test_ap_vlan_iface_cleanup_multibss(dev, apdev, p, cfgfile='multi-bss-iface.
     """
     try:
         helper_ap_vlan_iface_cleanup_multibss_cleanup()
-        subprocess.call(['ip','link','add','dummy0','type','dummy'])
-        subprocess.call(['ifconfig','dummy0','up'])
+        helper_ap_vlan_iface_test_and_prepare_environ()
 
         as_params = { "ssid": "as",
                       "beacon_int": "2000",
