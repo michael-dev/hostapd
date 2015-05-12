@@ -26,9 +26,9 @@
 #include "linux_ioctl.h"
 #include "ap/macvlan.h"
 
-#include <netlink/msg.h>
-#include <netlink/attr.h>
-#include <netlink/route/link.h>
+#include <net/if.h>
+#include "drivers/netlink.h"
+#include "drivers/priv_netlink.h"
 
 
 struct ieee8023_hdr {
@@ -60,7 +60,7 @@ struct wpa_driver_wiredng_data {
 	int numVlanInterfaces;
 	int* vlanInterfaceIdx;
 
-	struct nl_sock *nl;
+	struct netlink_data * nl;
 
 	int numSTA;
 	struct wpa_driver_wiredng_sta *sta;
@@ -162,18 +162,14 @@ static int driver_wiredng_flush(void *priv)
 }
 
 
-static void obj_input(struct nl_object *obj, void *arg)
+static void wired_event_receive_newlink(void *ctx,struct ifinfomsg *ifi, u8 *buf, size_t len)
 {
- 	if (nl_object_get_msgtype(obj) != RTM_NEWLINK)
+	struct wpa_driver_wiredng_data *drv = ctx;
+
+	if (!ifi || ifi->ifi_index != drv->ifidx)
 		return;
 
-	struct wpa_driver_wiredng_data *drv = arg;
-        struct rtnl_link * link = (struct rtnl_link *) obj;
-
-	if (rtnl_link_get_ifindex(link) != drv->ifidx)
-		return;
-
-	int flags = rtnl_link_get_flags(link);
+	int flags = ifi->ifi_flags;
 
 	if (flags & IFF_RUNNING) {
 		wpa_printf(MSG_DEBUG, "wiredng: Interface %s is up", drv->ifname);
@@ -185,34 +181,10 @@ static void obj_input(struct nl_object *obj, void *arg)
 }
 
 
-static int event_input(struct nl_msg *msg, void *arg)
-{
-        if (nl_msg_parse(msg, &obj_input, arg) < 0)
-                fprintf(stderr, "<<EVENT>> Unknown message type\n");
-
-        /* Exit nl_recvmsgs_def() and return to the main select() */
-        return NL_STOP;
-}
-
-
-static void wpa_driver_wiredng_event_receive(int sock, void *eloop_ctx,
-					     void *handle)
-{
-	int res;
-	struct nl_sock *nl = eloop_ctx;
-
-	wpa_printf(MSG_MSGDUMP, "wiredng: Event message available");
-
-	res = nl_recvmsgs_default(nl);
-	if (res) {
-		wpa_printf(MSG_INFO, "wiredng: %s->nl_recvmsgs failed: %d",
-			   __func__, res);
-	}
-}
-
 static int wired_init_sockets(struct wpa_driver_wiredng_data *drv, u8 *own_addr)
 {
 	struct sockaddr_ll addr;
+	struct netlink_config *cfg = 0;
 
 	drv->sock = socket(PF_PACKET, SOCK_RAW, htons(ETH_P_PAE));
 	if (drv->sock < 0) {
@@ -251,24 +223,19 @@ static int wired_init_sockets(struct wpa_driver_wiredng_data *drv, u8 *own_addr)
 	if (linux_get_ifhwaddr(drv->sock, drv->ifname, own_addr) < 0)
 		return -1;
 
-	drv->nl = nl_socket_alloc();
-	if (!drv->nl) {
-		wpa_printf(MSG_ERROR, "wired-ng:initsocket: failed to alloc netlink socket");
+	cfg = os_zalloc(sizeof(*cfg));
+	if (cfg == NULL)
+		return -1;
+
+	cfg->ctx = drv;
+	cfg->newlink_cb = wired_event_receive_newlink;
+	drv->nl = netlink_init(cfg);
+        if (drv->nl == NULL)
+	{
+		wpa_printf(MSG_ERROR, "wired: %s: netlink_init failed: %s",
+			   __func__, strerror(errno));
 		return -1;
 	}
-
-	nl_socket_disable_seq_check(drv->nl);
-	nl_socket_modify_cb(drv->nl, NL_CB_VALID, NL_CB_CUSTOM, event_input, drv);
-
-	if (nl_connect(drv->nl, NETLINK_ROUTE) < 0) {
-		wpa_printf(MSG_ERROR, "wired-ng:initsocket: failed to connect to netlink");
-		return -1;
-	}
-
-	nl_socket_add_membership(drv->nl, RTNLGRP_LINK);
-
-	nl_socket_set_nonblocking(drv->nl);
-	eloop_register_read_sock(nl_socket_get_fd(drv->nl), wpa_driver_wiredng_event_receive, drv->nl, NULL);
 
 	return 0;
 }
@@ -348,6 +315,8 @@ static void wired_driver_hapd_deinit(void *priv)
 
 	if (drv->sock >= 0)
 		close(drv->sock);
+	if (drv->nl)
+		netlink_deinit(drv->nl);
 
 	os_free(drv);
 }
