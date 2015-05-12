@@ -10,15 +10,18 @@
 
 #include "common.h"
 #include "eloop.h"
-#include "priv_netlink.h"
 #include "netlink.h"
 #include <assert.h>
+#include <netlink/msg.h>
+#include <netlink/attr.h>
+#include <netlink/route/link.h>
 
 struct netlink_data {
 	struct netlink_config *cfg;
 	struct netlink_data *next;
 };
 
+static struct nl_sock *netlink_global_nl = NULL;
 static int netlink_global_sock = -1;
 struct netlink_data *netlink_global_head = NULL;
 
@@ -95,8 +98,6 @@ try_again:
 struct netlink_data * netlink_init(struct netlink_config *cfg)
 {
 	struct netlink_data *netlink;
-	struct sockaddr_nl local;
-	int sock;
 
 	netlink = os_zalloc(sizeof(*netlink));
 	if (netlink == NULL)
@@ -112,27 +113,24 @@ struct netlink_data * netlink_init(struct netlink_config *cfg)
 	if (netlink_global_sock >= 0)
 		return netlink;
 
-	sock = socket(PF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
-	if (sock < 0) {
-		wpa_printf(MSG_ERROR, "netlink: Failed to open netlink "
-			   "socket: %s", strerror(errno));
-		netlink_deinit(netlink);
+	netlink_global_nl = nl_socket_alloc();
+	if (!netlink_global_nl) {
+		wpa_printf(MSG_ERROR, "wired-ng:initsocket: failed to alloc netlink socket");
 		return NULL;
 	}
 
-	os_memset(&local, 0, sizeof(local));
-	local.nl_family = AF_NETLINK;
-	local.nl_groups = RTMGRP_LINK;
-	if (bind(sock, (struct sockaddr *) &local, sizeof(local)) < 0)
-	{
-		wpa_printf(MSG_ERROR, "netlink: Failed to bind netlink "
-			   "socket: %s", strerror(errno));
-		netlink_deinit(netlink);
-		close(sock);
+	nl_socket_disable_seq_check(netlink_global_nl);
+
+	if (nl_connect(netlink_global_nl, NETLINK_ROUTE) < 0) {
+		wpa_printf(MSG_ERROR, "wired-ng:initsocket: failed to connect to netlink");
 		return NULL;
 	}
 
-	netlink_global_sock = sock;
+	nl_socket_add_membership(netlink_global_nl, RTNLGRP_LINK);
+
+	nl_socket_set_nonblocking(netlink_global_nl);
+	netlink_global_sock = nl_socket_get_fd(netlink_global_nl);
+
 	eloop_register_read_sock(netlink_global_sock, netlink_receive, NULL, NULL);
 
 	return netlink;
@@ -168,7 +166,8 @@ void netlink_deinit(struct netlink_data *netlink)
 	}
 	if (!netlink_global_head && netlink_global_sock >= 0) {
 		eloop_unregister_read_sock(netlink_global_sock);
-		close(netlink_global_sock);
+		nl_socket_free(netlink_global_nl);
+		netlink_global_nl = NULL;
 		netlink_global_sock = -1;
 	}
 }
