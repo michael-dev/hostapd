@@ -1083,6 +1083,58 @@ static int hostapd_config_ht_capab(struct hostapd_config *conf,
 		conf->ht_capab |= HT_CAP_INFO_SUPP_CHANNEL_WIDTH_SET;
 		conf->secondary_channel = 1;
 	}
+	if (os_strstr(capab, "[HT40]") && !conf->secondary_channel) {
+/*
+#	freq		HT40-		HT40+
+#	2.4 GHz		5-13		1-7 (1-9 in Europe/Japan)
+#	5 GHz		40,48,56,64	36,44,52,60
+#       5 Ghz min(pri,sec) \in { 36, 44, 52, 60, 100, 108, 116, 124, 132, 140,
+#			         149, 157, 184, 192 };
+*/
+		if (!conf->channel) {
+			wpa_printf(MSG_ERROR, "[HT40] ht_capab before/without channel");
+			conf->ht_capab |= HT_CAP_INFO_SUPP_CHANNEL_WIDTH_SET;
+			conf->secondary_channel = 1;
+		} else if (conf->channel >= 5 && conf->channel <= 13) {
+			conf->ht_capab |= HT_CAP_INFO_SUPP_CHANNEL_WIDTH_SET;
+			conf->secondary_channel = -1;
+		} else if (conf->channel >= 1 && conf->channel <= 9) {
+			conf->ht_capab |= HT_CAP_INFO_SUPP_CHANNEL_WIDTH_SET;
+			conf->secondary_channel = 1;
+		} else if (conf->channel == 40 ||
+			   conf->channel == 48 ||
+			   conf->channel == 56 ||
+			   conf->channel == 64 ||
+			   conf->channel == 104 ||
+			   conf->channel == 112 ||
+			   conf->channel == 120 ||
+			   conf->channel == 128 ||
+			   conf->channel == 136 ||
+			   conf->channel == 153 ||
+			   conf->channel == 161 ||
+			   conf->channel == 188 ||
+			   conf->channel == 196) {
+			conf->ht_capab |= HT_CAP_INFO_SUPP_CHANNEL_WIDTH_SET;
+			conf->secondary_channel = -1;
+		} else if (conf->channel == 36 ||
+			   conf->channel == 44 ||
+			   conf->channel == 52 ||
+			   conf->channel == 60 ||
+			   conf->channel == 100 ||
+			   conf->channel == 108 ||
+			   conf->channel == 116 ||
+			   conf->channel == 124 ||
+			   conf->channel == 132 ||
+			   conf->channel == 149 ||
+			   conf->channel == 157 ||
+			   conf->channel == 184 ||
+			   conf->channel == 192) {
+			conf->ht_capab |= HT_CAP_INFO_SUPP_CHANNEL_WIDTH_SET;
+			conf->secondary_channel = 1;
+		} else {
+			wpa_printf(MSG_ERROR, "[HT40] not possible with channel %d", conf->channel);
+		}
+	}
 	if (os_strstr(capab, "[SMPS-STATIC]")) {
 		conf->ht_capab &= ~HT_CAP_INFO_SMPS_MASK;
 		conf->ht_capab |= HT_CAP_INFO_SMPS_STATIC;
