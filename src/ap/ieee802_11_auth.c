@@ -24,7 +24,7 @@
 #include "ieee802_1x.h"
 #include "ieee802_11_auth.h"
 
-#define RADIUS_ACL_TIMEOUT 30
+#define RADIUS_ACL_TIMEOUT 600
 
 
 struct hostapd_cached_radius_acl {
