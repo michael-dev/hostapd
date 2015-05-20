@@ -839,7 +839,7 @@ int ap_sta_set_vlan(struct hostapd_data *hapd, struct sta_info *sta,
 		if (!vlan) {
 			hostapd_logger(hapd, sta->addr,
 				       HOSTAPD_MODULE_IEEE80211,
-				       HOSTAPD_LEVEL_DEBUG, "per_sta_vif "
+				       HOSTAPD_LEVEL_WARNING, "per_sta_vif "
 				       "missing wildcard ");
 			vlan_id = 0;
 			ret = -1;
@@ -882,7 +882,7 @@ int ap_sta_set_vlan(struct hostapd_data *hapd, struct sta_info *sta,
 		if (vlan == NULL) {
 			hostapd_logger(hapd, sta->addr,
 				       HOSTAPD_MODULE_IEEE80211,
-				       HOSTAPD_LEVEL_DEBUG, "could not add "
+				       HOSTAPD_LEVEL_WARNING, "could not add "
 				       "dynamic VLAN interface for "
 				       "vlan=%d%s",
 				       vlan_desc.untagged,
@@ -946,7 +946,7 @@ int ap_sta_bind_vlan(struct hostapd_data *hapd, struct sta_info *sta)
 
 	if (sta->vlan_id > 0 && vlan == NULL) {
 		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
-			       HOSTAPD_LEVEL_DEBUG, "could not find VLAN for "
+			       HOSTAPD_LEVEL_WARNING, "could not find VLAN for "
 			       "binding station to (vlan_id=%d)",
 			       sta->vlan_id);
 		ret = -1;
@@ -974,12 +974,15 @@ skip_counting:
 		       "'%s'", iface);
 
 	if (wpa_auth_sta_set_vlan(sta->wpa_sm, sta->vlan_id) < 0)
-		wpa_printf(MSG_INFO, "Failed to update VLAN-ID for WPA");
+		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
+			       HOSTAPD_LEVEL_WARNING, "Failed to update "
+			       "vlan_id=%d for WPA",
+			       sta->vlan_id);
 
 	ret = hostapd_drv_set_sta_vlan(iface, hapd, sta->addr, sta->vlan_id);
 	if (ret < 0) {
 		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
-			       HOSTAPD_LEVEL_DEBUG, "could not bind the STA "
+			       HOSTAPD_LEVEL_WARNING, "could not bind the STA "
 			       "entry to vlan_id=%d", sta->vlan_id);
 	}
 
