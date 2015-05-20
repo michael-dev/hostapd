@@ -15,7 +15,6 @@
 
 #include "utils/common.h"
 #include "utils/eloop.h"
-#include "crypto/sha1.h"
 #include "radius/radius.h"
 #include "radius/radius_client.h"
 #include "hostapd.h"
@@ -432,7 +431,7 @@ static void decode_tunnel_passwords(struct hostapd_data *hapd,
 				    struct hostapd_cached_radius_acl *cache)
 {
 	int passphraselen;
-	char *passphrase, *strpassphrase;
+	char *passphrase;
 	size_t i;
 	struct hostapd_sta_wpa_psk_short *psk;
 
@@ -453,19 +452,17 @@ static void decode_tunnel_passwords(struct hostapd_data *hapd,
 		 * passphrase does not contain the NULL termination.
 		 * Add it here as pbkdf2_sha1() requires it.
 		 */
-		strpassphrase = os_zalloc(passphraselen + 1);
 		psk = os_zalloc(sizeof(struct hostapd_sta_wpa_psk_short));
-		if (strpassphrase && psk) {
-			os_memcpy(strpassphrase, passphrase, passphraselen);
-			pbkdf2_sha1(strpassphrase,
-				    hapd->conf->ssid.ssid,
-				    hapd->conf->ssid.ssid_len, 4096,
-				    psk->psk, PMK_LEN);
+		if (psk) {
+			if (passphraselen > PASSPHRASE_LEN - 1)
+				os_memcpy(psk->passphrase, passphrase, PASSPHRASE_LEN - 1);
+			else
+				os_memcpy(psk->passphrase, passphrase, passphraselen);
+			psk->ispassphrase = 1;
 			psk->next = cache->psk;
 			cache->psk = psk;
 			psk = NULL;
 		}
-		os_free(strpassphrase);
 		os_free(psk);
 		os_free(passphrase);
 	}

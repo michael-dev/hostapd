@@ -27,6 +27,7 @@
 #include "ap_config.h"
 #include "wpa_auth.h"
 #include "wpa_auth_glue.h"
+#include "crypto/sha1.h"
 #include <stdlib.h>
 
 #ifdef CONFIG_IEEE80211R
@@ -252,6 +253,13 @@ static const u8 * hostapd_wpa_auth_get_psk(void *ctx, const u8 *addr,
 		struct hostapd_sta_wpa_psk_short *pos;
 		psk = sta->psk->psk;
 		for (pos = sta->psk; pos; pos = pos->next) {
+			if (pos->ispassphrase) {
+				pbkdf2_sha1(pos->passphrase,
+					    hapd->conf->ssid.ssid,
+					    hapd->conf->ssid.ssid_len, 4096,
+					    pos->psk, PMK_LEN);
+				pos->ispassphrase = 0;
+			}
 			if (pos->psk == prev_psk) {
 				psk = pos->next ? pos->next->psk : NULL;
 				break;

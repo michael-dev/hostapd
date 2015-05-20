@@ -131,9 +131,12 @@ struct hostapd_vlan {
 };
 
 #define PMK_LEN 32
+#define PASSPHRASE_LEN ( 2 * PMK_LEN )
 struct hostapd_sta_wpa_psk_short {
 	struct hostapd_sta_wpa_psk_short *next;
+	int ispassphrase;
 	u8 psk[PMK_LEN];
+	char passphrase[PASSPHRASE_LEN];
 };
 
 struct hostapd_wpa_psk {
