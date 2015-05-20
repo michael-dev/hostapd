@@ -491,7 +491,8 @@ hostapd_acl_recv_radius(struct radius_msg *msg, struct radius_msg *req,
 	if (query == NULL)
 		return RADIUS_RX_UNKNOWN;
 
-	wpa_printf(MSG_DEBUG, "Found matching Access-Request for RADIUS "
+	hostapd_logger(hapd, query->addr,  HOSTAPD_MODULE_RADIUS, HOSTAPD_LEVEL_DEBUG,
+		    "Found matching Access-Request for RADIUS "
 		   "message (id=%d)", query->radius_id);
 
 	if (radius_msg_verify(msg, shared_secret, shared_secret_len, req, 0)) {

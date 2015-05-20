@@ -274,12 +274,16 @@ static void send_auth_reply(struct hostapd_data *hapd,
 	if (ies && ies_len)
 		os_memcpy(reply->u.auth.variable, ies, ies_len);
 
-	wpa_printf(MSG_DEBUG, "authentication reply: STA=" MACSTR
-		   " auth_alg=%d auth_transaction=%d resp=%d (IE len=%lu)",
-		   MAC2STR(dst), auth_alg, auth_transaction,
-		   resp, (unsigned long) ies_len);
+	hostapd_logger(hapd, dst, HOSTAPD_MODULE_IEEE80211,
+		       HOSTAPD_LEVEL_DEBUG,
+		       "authentication reply: STA=" MACSTR
+		       " auth_alg=%d auth_transaction=%d resp=%d (IE len=%lu)",
+		       MAC2STR(dst), auth_alg, auth_transaction,
+		       resp, (unsigned long) ies_len);
 	if (hostapd_drv_send_mlme(hapd, reply, rlen, 0) < 0)
-		wpa_printf(MSG_INFO, "send_auth_reply: send");
+		hostapd_logger(hapd, dst, HOSTAPD_MODULE_IEEE80211,
+			       HOSTAPD_LEVEL_INFO,
+			       "send_auth_reply: send failed");
 
 	os_free(buf);
 }
@@ -874,8 +878,10 @@ void handle_auth_restart_cb(struct hostapd_data *hapd, const u8 *buf,
 #else /* CONFIG_DRIVER_RADIUS_ACL */
 #ifdef NEED_AP_MLME
 	/* Re-send original authentication frame for 802.11 processing */
-	wpa_printf(MSG_DEBUG, "Re-sending authentication frame after "
-		   "successful RADIUS ACL query");
+	hostapd_logger(hapd, mac, HOSTAPD_MODULE_IEEE80211,
+		       HOSTAPD_LEVEL_DEBUG,
+		       "Re-sending authentication frame after "
+		       "successful RADIUS ACL query");
 	ieee802_11_mgmt(hapd, buf, len, NULL);
 #endif /* NEED_AP_MLME */
 #endif /* CONFIG_DRIVER_RADIUS_ACL */
@@ -949,8 +955,10 @@ static void handle_auth(struct hostapd_data *hapd,
 	hostapd_allowed_address_init(&info);
 
 	if (len < IEEE80211_HDRLEN + sizeof(mgmt->u.auth)) {
-		wpa_printf(MSG_INFO, "handle_auth - too short payload (len=%lu)",
-			   (unsigned long) len);
+		hostapd_logger(hapd, mgmt->sa, HOSTAPD_MODULE_IEEE80211,
+			       HOSTAPD_LEVEL_INFO,
+			       "handle_auth - too short payload (len=%lu)",
+			       (unsigned long) len);
 		return;
 	}
 
@@ -976,7 +984,9 @@ static void handle_auth(struct hostapd_data *hapd,
 	    mgmt->u.auth.variable[1] == WLAN_AUTH_CHALLENGE_LEN)
 		challenge = &mgmt->u.auth.variable[2];
 
-	wpa_printf(MSG_DEBUG, "authentication: STA=" MACSTR " auth_alg=%d "
+	hostapd_logger(hapd, mgmt->sa, HOSTAPD_MODULE_IEEE80211,
+		       HOSTAPD_LEVEL_DEBUG,
+		       "authentication: STA=" MACSTR " auth_alg=%d "
 		   "auth_transaction=%d status_code=%d wep=%d%s "
 		   "seq_ctrl=0x%x%s",
 		   MAC2STR(mgmt->sa), auth_alg, auth_transaction,
@@ -1001,23 +1011,29 @@ static void handle_auth(struct hostapd_data *hapd,
 #endif /* CONFIG_SAE */
 	      ((hapd->conf->auth_algs & WPA_AUTH_ALG_SHARED) &&
 	       auth_alg == WLAN_AUTH_SHARED_KEY))) {
-		wpa_printf(MSG_INFO, "Unsupported authentication algorithm (%d)",
-			   auth_alg);
+		hostapd_logger(hapd, mgmt->sa, HOSTAPD_MODULE_IEEE80211,
+			       HOSTAPD_LEVEL_INFO,
+			       "Unsupported authentication algorithm (%d)",
+			       auth_alg);
 		resp = WLAN_STATUS_NOT_SUPPORTED_AUTH_ALG;
 		goto fail;
 	}
 
 	if (!(auth_transaction == 1 || auth_alg == WLAN_AUTH_SAE ||
 	      (auth_alg == WLAN_AUTH_SHARED_KEY && auth_transaction == 3))) {
-		wpa_printf(MSG_INFO, "Unknown authentication transaction number (%d)",
-			   auth_transaction);
+		hostapd_logger(hapd, mgmt->sa, HOSTAPD_MODULE_IEEE80211,
+			       HOSTAPD_LEVEL_INFO,
+			       "Unknown authentication transaction number (%d)",
+			       auth_transaction);
 		resp = WLAN_STATUS_UNKNOWN_AUTH_TRANSACTION;
 		goto fail;
 	}
 
 	if (os_memcmp(mgmt->sa, hapd->own_addr, ETH_ALEN) == 0) {
-		wpa_printf(MSG_INFO, "Station " MACSTR " not allowed to authenticate",
-			   MAC2STR(mgmt->sa));
+		hostapd_logger(hapd, mgmt->sa, HOSTAPD_MODULE_IEEE80211,
+			       HOSTAPD_LEVEL_INFO,
+			       "Station " MACSTR " not allowed to authenticate",
+			       MAC2STR(mgmt->sa));
 		resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
 		goto fail;
 	}
@@ -1027,15 +1043,19 @@ static void handle_auth(struct hostapd_data *hapd,
 				      &info);
 
 	if (res == HOSTAPD_ACL_REJECT) {
-		wpa_printf(MSG_INFO, "Station " MACSTR " not allowed to authenticate",
-			   MAC2STR(mgmt->sa));
+		hostapd_logger(hapd, mgmt->sa, HOSTAPD_MODULE_IEEE80211,
+			       HOSTAPD_LEVEL_INFO,
+			       "Station " MACSTR " not allowed to authenticate",
+			       MAC2STR(mgmt->sa));
 		resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
 		goto fail;
 	}
 	if (res == HOSTAPD_ACL_PENDING) {
-		wpa_printf(MSG_DEBUG, "Authentication frame from " MACSTR
-			   " waiting for an external authentication",
-			   MAC2STR(mgmt->sa));
+		hostapd_logger(hapd, mgmt->sa, HOSTAPD_MODULE_IEEE80211,
+			       HOSTAPD_LEVEL_DEBUG,
+			       "Authentication frame from " MACSTR
+			       " waiting for an external authentication",
+			       MAC2STR(mgmt->sa));
 		/* Authentication code will re-send the authentication frame
 		 * after it has received (and cached) information from the
 		 * external source. */
@@ -1119,8 +1139,10 @@ static void handle_auth(struct hostapd_data *hapd,
 			sta->wpa_sm = wpa_auth_sta_init(hapd->wpa_auth,
 							sta->addr, NULL);
 		if (sta->wpa_sm == NULL) {
-			wpa_printf(MSG_DEBUG, "FT: Failed to initialize WPA "
-				   "state machine");
+			hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
+				       HOSTAPD_LEVEL_WARNING,
+				       "FT: Failed to initialize WPA "
+				       "state machine");
 			resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
 			goto fail;
 		}
@@ -1417,8 +1439,10 @@ static u16 check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 							sta->addr,
 							p2p_dev_addr);
 		if (sta->wpa_sm == NULL) {
-			wpa_printf(MSG_WARNING, "Failed to initialize WPA "
-				   "state machine");
+			hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
+				       HOSTAPD_LEVEL_WARNING,
+				       "Failed to initialize WPA "
+				       "state machine");
 			return WLAN_STATUS_UNSPECIFIED_FAILURE;
 		}
 		res = wpa_validate_wpa_ie(hapd->wpa_auth, sta->wpa_sm,
@@ -1472,7 +1496,9 @@ static u16 check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 #ifdef CONFIG_IEEE80211R
 		if (sta->auth_alg == WLAN_AUTH_FT) {
 			if (!reassoc) {
-				wpa_printf(MSG_DEBUG, "FT: " MACSTR " tried "
+				hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
+					       HOSTAPD_LEVEL_DEBUG,
+					   "FT: " MACSTR " tried "
 					   "to use association (not "
 					   "re-association) with FT auth_alg",
 					   MAC2STR(sta->addr));
@@ -1701,8 +1727,9 @@ static void send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
 	send_len += p - reply->u.assoc_resp.variable;
 
 	if (hostapd_drv_send_mlme(hapd, reply, send_len, 0) < 0)
-		wpa_printf(MSG_INFO, "Failed to send assoc resp: %s",
-			   strerror(errno));
+		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
+			       HOSTAPD_LEVEL_INFO,
+			       "Failed to send assoc resp: %s", strerror(errno));
 }
 
 
@@ -1718,7 +1745,9 @@ static void handle_assoc(struct hostapd_data *hapd,
 
 	if (len < IEEE80211_HDRLEN + (reassoc ? sizeof(mgmt->u.reassoc_req) :
 				      sizeof(mgmt->u.assoc_req))) {
-		wpa_printf(MSG_INFO, "handle_assoc(reassoc=%d) - too short payload (len=%lu)",
+		hostapd_logger(hapd, mgmt->sa, HOSTAPD_MODULE_IEEE80211,
+			       HOSTAPD_LEVEL_INFO,
+			   "handle_assoc(reassoc=%d) - too short payload (len=%lu)",
 			   reassoc, (unsigned long) len);
 		return;
 	}
@@ -1750,7 +1779,9 @@ static void handle_assoc(struct hostapd_data *hapd,
 		capab_info = le_to_host16(mgmt->u.reassoc_req.capab_info);
 		listen_interval = le_to_host16(
 			mgmt->u.reassoc_req.listen_interval);
-		wpa_printf(MSG_DEBUG, "reassociation request: STA=" MACSTR
+		hostapd_logger(hapd, mgmt->sa, HOSTAPD_MODULE_IEEE80211,
+			       HOSTAPD_LEVEL_DEBUG,
+			   "reassociation request: STA=" MACSTR
 			   " capab_info=0x%02x listen_interval=%d current_ap="
 			   MACSTR " seq_ctrl=0x%x%s",
 			   MAC2STR(mgmt->sa), capab_info, listen_interval,
@@ -1762,7 +1793,9 @@ static void handle_assoc(struct hostapd_data *hapd,
 		capab_info = le_to_host16(mgmt->u.assoc_req.capab_info);
 		listen_interval = le_to_host16(
 			mgmt->u.assoc_req.listen_interval);
-		wpa_printf(MSG_DEBUG, "association request: STA=" MACSTR
+		hostapd_logger(hapd, mgmt->sa, HOSTAPD_MODULE_IEEE80211,
+			       HOSTAPD_LEVEL_DEBUG,
+			   "association request: STA=" MACSTR
 			   " capab_info=0x%02x listen_interval=%d "
 			   "seq_ctrl=0x%x%s",
 			   MAC2STR(mgmt->sa), capab_info, listen_interval,
@@ -1776,7 +1809,9 @@ static void handle_assoc(struct hostapd_data *hapd,
 	if (sta && sta->auth_alg == WLAN_AUTH_FT &&
 	    (sta->flags & WLAN_STA_AUTH) == 0 &&
 	    (sta->flags & WLAN_STA_PREAUTH_FT_OVER_DS)) {
-		wpa_printf(MSG_DEBUG, "FT: Allow STA " MACSTR " to associate "
+		hostapd_logger(hapd, mgmt->sa, HOSTAPD_MODULE_IEEE80211,
+			       HOSTAPD_LEVEL_DEBUG,
+			   "FT: Allow STA " MACSTR " to associate "
 			   "prior to authentication since it is using "
 			   "over-the-DS FT", MAC2STR(mgmt->sa));
 	} else
@@ -1814,7 +1849,7 @@ static void handle_assoc(struct hostapd_data *hapd,
 	}
 
 	if (listen_interval > hapd->conf->max_listen_interval) {
-		hostapd_logger(hapd, mgmt->sa, HOSTAPD_MODULE_IEEE80211,
+		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
 			       HOSTAPD_LEVEL_DEBUG,
 			       "Too large Listen Interval (%d)",
 			       listen_interval);
@@ -1921,13 +1956,17 @@ static void handle_disassoc(struct hostapd_data *hapd,
 		return;
 	}
 
-	wpa_printf(MSG_DEBUG, "disassocation: STA=" MACSTR " reason_code=%d",
+	hostapd_logger(hapd, mgmt->sa, HOSTAPD_MODULE_IEEE80211,
+		       HOSTAPD_LEVEL_DEBUG,
+		   "disassocation: STA=" MACSTR " reason_code=%d",
 		   MAC2STR(mgmt->sa),
 		   le_to_host16(mgmt->u.disassoc.reason_code));
 
 	sta = ap_get_sta(hapd, mgmt->sa);
 	if (sta == NULL) {
-		wpa_printf(MSG_INFO, "Station " MACSTR " trying to disassociate, but it is not associated",
+		hostapd_logger(hapd, mgmt->sa, HOSTAPD_MODULE_IEEE80211,
+			       HOSTAPD_LEVEL_INFO,
+			   "Station " MACSTR " trying to disassociate, but it is not associated",
 			   MAC2STR(mgmt->sa));
 		return;
 	}
@@ -2331,7 +2370,9 @@ static void handle_auth_cb(struct hostapd_data *hapd,
 
 	sta = ap_get_sta(hapd, mgmt->da);
 	if (!sta) {
-		wpa_printf(MSG_INFO, "handle_auth_cb: STA " MACSTR " not found",
+		hostapd_logger(hapd, mgmt->da, HOSTAPD_MODULE_IEEE80211,
+			       HOSTAPD_LEVEL_INFO,
+			   "handle_auth_cb: STA " MACSTR " not found",
 			   MAC2STR(mgmt->da));
 		return;
 	}
