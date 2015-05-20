@@ -1053,6 +1053,7 @@ static void handle_auth(struct hostapd_data *hapd,
 				       HOSTAPD_LEVEL_DEBUG,
 				       "Drop repeated authentication frame seq_ctrl=0x%x",
 				       seq_ctrl);
+			hostapd_allowed_address_free(&info);
 			return;
 		}
 	} else {
@@ -1070,6 +1071,7 @@ static void handle_auth(struct hostapd_data *hapd,
 			wpabuf_free(hapd->mesh_pending_auth);
 			hapd->mesh_pending_auth = wpabuf_alloc_copy(mgmt, len);
 			os_get_reltime(&hapd->mesh_pending_auth_time);
+			hostapd_allowed_address_free(&info);
 			return;
 		}
 #endif /* CONFIG_MESH */
