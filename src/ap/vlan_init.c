@@ -914,6 +914,7 @@ static int vlan_dynamic_add(struct hostapd_data *hapd,
 					   vlan->ifname, strerror(errno));
 				return -1;
 			}
+			vlan->setup = 1;
 #ifdef CONFIG_FULL_DYNAMIC_VLAN
 			vlan_newlink(vlan->ifname, hapd);
 #endif /* CONFIG_FULL_DYNAMIC_VLAN */
@@ -940,6 +941,7 @@ static void vlan_dynamic_remove(struct hostapd_data *hapd,
 			vlan_dellink(vlan->ifname, hapd);
 #else
 		if (vlan->vlan_id != VLAN_ID_WILDCARD &&
+		    vlan->setup &&
 		    vlan_if_remove(hapd, vlan)) {
 			wpa_printf(MSG_ERROR, "VLAN: Could not remove VLAN "
 				   "iface: %s: %s",
@@ -1027,15 +1029,22 @@ struct hostapd_vlan * vlan_add_dynamic(struct hostapd_data *hapd,
 	n->next = hapd->conf->vlan;
 	hapd->conf->vlan = n;
 
-	/* hapd->conf->vlan needs this new VLAN here for WPA setup */
-	if (vlan_if_add(hapd, n, 0)) {
-		hapd->conf->vlan = n->next;
-		os_free(n);
-		n = NULL;
-	}
-
 out:
 	return n;
+}
+
+
+int vlan_setup_dynamic(struct hostapd_data *hapd, struct hostapd_vlan *vlan)
+{
+	int ret;
+
+	if (vlan->setup)
+		return 0;
+
+	ret = vlan_if_add(hapd, vlan, 0);
+	vlan->setup = 1;
+
+	return ret;
 }
 
 
