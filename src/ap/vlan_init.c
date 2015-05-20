@@ -974,24 +974,22 @@ struct hostapd_vlan * vlan_add_dynamic(struct hostapd_data *hapd,
 				       struct vlan_description vlan_desc)
 {
 	struct hostapd_vlan *n = NULL;
-	char *ifname, *pos;
+	char ifname[IFNAMSIZ+1], *pos;
 
 	if (vlan == NULL || vlan->vlan_id != VLAN_ID_WILDCARD)
 		return NULL;
 
 	wpa_printf(MSG_DEBUG, "VLAN: %s(vlan_id=%d ifname=%s)",
 		   __func__, vlan_id, vlan->ifname);
-	ifname = os_strdup(vlan->ifname);
-	if (ifname == NULL)
-		return NULL;
+	os_strlcpy(ifname, vlan->ifname, sizeof(ifname));
 	pos = os_strchr(ifname, '#');
 	if (pos == NULL)
-		goto free_ifname;
+		goto out;
 	*pos++ = '\0';
 
 	n = os_zalloc(sizeof(*n));
 	if (n == NULL)
-		goto free_ifname;
+		goto out;
 
 	n->vlan_id = vlan_id;
 	n->vlan_desc = vlan_desc;
@@ -1011,8 +1009,7 @@ struct hostapd_vlan * vlan_add_dynamic(struct hostapd_data *hapd,
 		goto free_ifname;
 	}
 
-free_ifname:
-	os_free(ifname);
+out:
 	return n;
 }
 
