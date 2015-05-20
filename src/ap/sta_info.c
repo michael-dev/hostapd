@@ -953,6 +953,12 @@ int ap_sta_bind_vlan(struct hostapd_data *hapd, struct sta_info *sta)
 		goto done;
 	} else if (vlan && vlan->dynamic_vlan > 0) {
 		vlan->dynamic_vlan++;
+		if (vlan_setup_dynamic(hapd, vlan)) {
+			hostapd_logger(hapd, sta->addr,
+				       HOSTAPD_MODULE_IEEE80211,
+				       HOSTAPD_LEVEL_WARNING, "failed to set up"
+				       " dynamic VLAN interface '%s'", iface);
+		}
 		hostapd_logger(hapd, sta->addr,
 			       HOSTAPD_MODULE_IEEE80211,
 			       HOSTAPD_LEVEL_DEBUG, "updated existing "

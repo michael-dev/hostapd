@@ -1001,16 +1001,22 @@ struct hostapd_vlan * vlan_add_dynamic(struct hostapd_data *hapd,
 	n->next = hapd->conf->vlan;
 	hapd->conf->vlan = n;
 
-	/* hapd->conf->vlan needs this new vlan here for wpa setup */
-	if (vlan_if_add(hapd, n, 0)) {
-		hapd->conf->vlan = n->next;
-		os_free(n);
-		n = NULL;
-		goto free_ifname;
-	}
-
 out:
 	return n;
+}
+
+
+int vlan_setup_dynamic(struct hostapd_data *hapd, struct hostapd_vlan *vlan)
+{
+	int ret;
+
+	if (vlan->setup)
+		return 0;
+
+	ret = vlan_if_add(hapd, vlan, 0);
+	vlan->setup = 1;
+
+	return ret;
 }
 
 
