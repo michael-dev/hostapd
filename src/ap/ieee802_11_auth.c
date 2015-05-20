@@ -211,8 +211,11 @@ void hostapd_allowed_address_init(struct hostapd_allowed_address_info *info)
 void hostapd_allowed_address_free(struct hostapd_allowed_address_info *info)
 {
 	os_free(info->identity);
+	info->identity = NULL;
 	os_free(info->radius_cui);
+	info->radius_cui = NULL;
 	hostapd_free_psk_list(info->psk);
+	info->psk = NULL;
 }
 
 
