@@ -893,13 +893,13 @@ int ap_sta_set_vlan(struct hostapd_data *hapd, struct sta_info *sta,
 		}
 
 		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
-			       HOSTAPD_LEVEL_DEBUG, "added new dynamic VLAN "
+			       HOSTAPD_LEVEL_INFO, "added new dynamic VLAN "
 			       "interface '%s'", vlan->ifname);
 	} else if (vlan && vlan->dynamic_vlan > 0) {
 		vlan->dynamic_vlan++;
 		hostapd_logger(hapd, sta->addr,
 			       HOSTAPD_MODULE_IEEE80211,
-			       HOSTAPD_LEVEL_DEBUG, "updated existing "
+			       HOSTAPD_LEVEL_INFO, "updated existing "
 			       "dynamic VLAN interface '%s'", vlan->ifname);
 	}
 done:
@@ -961,7 +961,7 @@ int ap_sta_bind_vlan(struct hostapd_data *hapd, struct sta_info *sta)
 		}
 		hostapd_logger(hapd, sta->addr,
 			       HOSTAPD_MODULE_IEEE80211,
-			       HOSTAPD_LEVEL_DEBUG, "updated existing "
+			       HOSTAPD_LEVEL_INFO, "updated existing "
 			       "dynamic VLAN interface '%s'", iface);
 	}
 
@@ -970,7 +970,7 @@ int ap_sta_bind_vlan(struct hostapd_data *hapd, struct sta_info *sta)
 
 skip_counting:
 	hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
-		       HOSTAPD_LEVEL_DEBUG, "binding station to interface "
+		       HOSTAPD_LEVEL_INFO, "binding station to interface "
 		       "'%s'", iface);
 
 	if (wpa_auth_sta_set_vlan(sta->wpa_sm, sta->vlan_id) < 0)
