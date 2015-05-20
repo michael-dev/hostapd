@@ -129,6 +129,7 @@ struct hostapd_vlan {
 	char ifname[IFNAMSIZ + 1];
 	char bridge[IFNAMSIZ + 1];
 	int configured;
+	int setup;
 	int dynamic_vlan;
 #ifdef CONFIG_RSN_PREAUTH_COPY
 	void* rsn_preauth;
