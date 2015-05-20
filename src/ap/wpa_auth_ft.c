@@ -1262,9 +1262,13 @@ static int wpa_ft_process_auth_req(struct wpa_state_machine *sm,
 		    pmk_r1_name, WPA_PMK_NAME_LEN);
 
 	if (wpa_key_mgmt_ft_psk(sm->wpa_key_mgmt)) {
+		hostapd_logger(NULL, sm->addr, HOSTAPD_MODULE_IEEE80211,
+			       HOSTAPD_LEVEL_DEBUG, "FT: fetch psk");
 		if (wpa_ft_psk_pmk_r1(sm, pmk_r1_name, pmk_r1, &pairwise,
 				       &vlan) < 0)
 			return WLAN_STATUS_INVALID_PMKID;
+		hostapd_logger(NULL, sm->addr, HOSTAPD_MODULE_IEEE80211,
+			       HOSTAPD_LEVEL_DEBUG, "FT: fetch psk done");
 	} else
 	if (wpa_ft_fetch_pmk_r1(sm->wpa_auth, sm->addr, pmk_r1_name, pmk_r1,
 		    &pairwise, &vlan) < 0) {
@@ -1366,7 +1370,9 @@ void wpa_ft_process_auth(struct wpa_state_machine *sm, const u8 *bssid,
 		return;
 	}
 
-	wpa_printf(MSG_DEBUG, "FT: Received authentication frame: STA=" MACSTR
+	hostapd_logger(NULL, sm->addr, HOSTAPD_MODULE_IEEE80211,
+		       HOSTAPD_LEVEL_DEBUG,
+		   "FT: Received authentication frame: STA=" MACSTR
 		   " BSSID=" MACSTR " transaction=%d",
 		   MAC2STR(sm->addr), MAC2STR(bssid), auth_transaction);
 	sm->ft_pending_cb = cb;
@@ -1376,12 +1382,16 @@ void wpa_ft_process_auth(struct wpa_state_machine *sm, const u8 *bssid,
 	res = wpa_ft_process_auth_req(sm, ies, ies_len, &resp_ies,
 				      &resp_ies_len);
 	if (res < 0) {
-		wpa_printf(MSG_DEBUG, "FT: Callback postponed until response is available");
+		hostapd_logger(NULL, sm->addr, HOSTAPD_MODULE_IEEE80211,
+			       HOSTAPD_LEVEL_DEBUG,
+			       "FT: Callback postponed until response is available");
 		return;
 	}
 	status = res;
 
-	wpa_printf(MSG_DEBUG, "FT: FT authentication response: dst=" MACSTR
+	hostapd_logger(NULL, sm->addr, HOSTAPD_MODULE_IEEE80211,
+		       HOSTAPD_LEVEL_DEBUG,
+		   "FT: FT authentication response: dst=" MACSTR
 		   " auth_transaction=%d status=%d",
 		   MAC2STR(sm->addr), auth_transaction + 1, status);
 	wpa_hexdump(MSG_DEBUG, "FT: Response IEs", resp_ies, resp_ies_len);
