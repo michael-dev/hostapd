@@ -17,6 +17,7 @@
 struct vlan_description;
 
 #define MAX_OWN_IE_OVERRIDE 256
+#define FT_ANONCE_TIMEOUT 5
 
 #ifdef _MSC_VER
 #pragma pack(push, 1)

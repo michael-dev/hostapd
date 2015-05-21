@@ -2886,6 +2886,8 @@ static int wpa_ft_process_auth_req(struct wpa_state_machine *sm,
 	size_t identity_len = 0, radius_cui_len = 0;
 	int use_sha384;
 	size_t pmk_r1_len;
+	struct os_reltime now;
+	const u8 *snoncenew;
 
 	*resp_ies = NULL;
 	*resp_ies_len = 0;
@@ -2921,7 +2923,7 @@ static int wpa_ft_process_auth_req(struct wpa_state_machine *sm,
 			return WLAN_STATUS_INVALID_FTIE;
 		}
 
-		os_memcpy(sm->SNonce, ftie->snonce, WPA_NONCE_LEN);
+		snoncenew = ftie->snonce;
 	} else {
 		struct rsn_ftie *ftie;
 
@@ -2931,8 +2933,13 @@ static int wpa_ft_process_auth_req(struct wpa_state_machine *sm,
 			return WLAN_STATUS_INVALID_FTIE;
 		}
 
-		os_memcpy(sm->SNonce, ftie->snonce, WPA_NONCE_LEN);
+		snoncenew = ftie->snonce;
 	}
+
+	if (os_memcmp(sm->SNonce, snoncenew, WPA_NONCE_LEN) != 0)
+		/* do not reuse A-Nonce if S-Nonce differs */
+		sm->ANonceTimestamp = 0;
+	os_memcpy(sm->SNonce, snoncenew, WPA_NONCE_LEN);
 
 	if (parse.r0kh_id == NULL) {
 		wpa_printf(MSG_DEBUG, "FT: Invalid FTIE - no R0KH-ID");
@@ -3006,16 +3013,35 @@ pmk_r1_derived:
 	os_memcpy(sm->pmk_r1, pmk_r1, pmk_r1_len);
 	sm->pmk_r1_len = pmk_r1_len;
 
+	/* if the second authentication requests comes in very very quickly,
+	 * it might be a client resend. Do not touch A-Nonce then.
+	 */
+
+	os_get_reltime(&now);
+	if (sm->ANonceTimestamp &&
+	    sm->ANonceTimestamp < now.sec - FT_ANONCE_TIMEOUT)
+		sm->ANonceTimestamp = 0;
+
+	if (sm->ANonceTimestamp) {
+		wpa_hexdump(MSG_DEBUG, "FT: Reuse ANonce",
+			    sm->ANonce, WPA_NONCE_LEN);
+		goto skip_anonce;
+	}
+
 	if (random_get_bytes(sm->ANonce, WPA_NONCE_LEN)) {
 		wpa_printf(MSG_DEBUG, "FT: Failed to get random data for "
 			   "ANonce");
 		return WLAN_STATUS_UNSPECIFIED_FAILURE;
 	}
 
-	wpa_hexdump(MSG_DEBUG, "FT: Received SNonce",
-		    sm->SNonce, WPA_NONCE_LEN);
 	wpa_hexdump(MSG_DEBUG, "FT: Generated ANonce",
 		    sm->ANonce, WPA_NONCE_LEN);
+
+	sm->ANonceTimestamp = now.sec;
+skip_anonce:
+
+	wpa_hexdump(MSG_DEBUG, "FT: Received SNonce",
+		    sm->SNonce, WPA_NONCE_LEN);
 
 	if (wpa_pmk_r1_to_ptk(pmk_r1, pmk_r1_len, sm->SNonce, sm->ANonce,
 			      sm->addr, sm->wpa_auth->addr, pmk_r1_name,
@@ -3138,6 +3164,9 @@ u16 wpa_ft_validate_reassoc(struct wpa_state_machine *sm, const u8 *ies,
 		return WLAN_STATUS_UNSPECIFIED_FAILURE;
 
 	use_sha384 = wpa_key_mgmt_sha384(sm->wpa_key_mgmt);
+
+	/* station entered ASSOC state, so next AUTH will get new ANonce */
+	sm->ANonceTimestamp = 0;
 
 	wpa_hexdump(MSG_DEBUG, "FT: Reassoc Req IEs", ies, ies_len);
 
