@@ -57,6 +57,7 @@ struct wpa_state_machine {
 	Boolean MICVerified;
 	Boolean GUpdateStationKeys;
 	u8 ANonce[WPA_NONCE_LEN];
+	Boolean ANonceAlreadyPresent;
 	u8 SNonce[WPA_NONCE_LEN];
 	u8 alt_SNonce[WPA_NONCE_LEN];
 	u8 alt_replay_counter[WPA_REPLAY_COUNTER_LEN];
