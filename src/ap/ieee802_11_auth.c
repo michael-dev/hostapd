@@ -149,6 +149,7 @@ static int hostapd_radius_acl_query(struct hostapd_data *hapd, const u8 *addr,
 {
 	struct radius_msg *msg;
 	char buf[128];
+	char* ssid;
 
 	query->radius_id = radius_client_get_id(hapd->radius);
 	msg = radius_msg_new(RADIUS_CODE_ACCESS_REQUEST, query->radius_id);
@@ -184,7 +185,16 @@ static int hostapd_radius_acl_query(struct hostapd_data *hapd, const u8 *addr,
 		goto fail;
 	}
 
-	os_snprintf(buf, sizeof(buf), "CONNECT 11Mbps 802.11b");
+	/* add trailing \0 */
+	ssid = os_zalloc(hapd->conf->ssid.ssid_len + 1);
+	if (!ssid) {
+		wpa_printf(MSG_DEBUG, "Could not alloc ssid for Connect-Info");
+		goto fail;
+	}
+	os_memcpy(ssid, hapd->conf->ssid.ssid, hapd->conf->ssid.ssid_len);
+
+	os_snprintf(buf, sizeof(buf), "CONNECT 11Mbps 802.11b:%s", ssid);
+	os_free(ssid); ssid = NULL;
 	if (!radius_msg_add_attr(msg, RADIUS_ATTR_CONNECT_INFO,
 				 (u8 *) buf, os_strlen(buf))) {
 		wpa_printf(MSG_DEBUG, "Could not add Connect-Info");
@@ -196,7 +206,7 @@ static int hostapd_radius_acl_query(struct hostapd_data *hapd, const u8 *addr,
 	return 0;
 
  fail:
-	radius_msg_free(msg);
+	os_free(ssid); ssid = NULL;
 	return -1;
 }
 #endif /* CONFIG_NO_RADIUS */
@@ -441,21 +451,39 @@ static void decode_tunnel_passwords(struct hostapd_data *hapd,
 		 */
 		if (passphrase == NULL)
 			break;
+
+		/*
+		 * Passphase should be 8..63 chars (to be hashed with ssid)
+		 * or 64 chars hex string (already hashed with ssid)
+		 */
+
+		if (passphraselen < 8 || passphraselen > PASSPHRASE_LEN)
+			continue;
+
 		/*
 		 * passphrase does not contain the NULL termination.
 		 * Add it here as pbkdf2_sha1() requires it.
 		 */
 		psk = os_zalloc(sizeof(struct hostapd_sta_wpa_psk_short));
 		if (psk) {
-			if (passphraselen > PASSPHRASE_LEN - 1)
-				os_memcpy(psk->passphrase, passphrase, PASSPHRASE_LEN - 1);
-			else
+			if ((passphraselen == PASSPHRASE_LEN) &&
+			    (hexstr2bin(passphrase, psk->psk, PMK_LEN) < 0)) {
+				hostapd_logger(hapd, cache->addr,
+					       HOSTAPD_MODULE_RADIUS,
+					       HOSTAPD_LEVEL_WARNING,
+					       "invalid hex string (%d chars) "
+					       "in Tunnel-Password",
+					       passphraselen);
+				goto skip;
+			} else if (passphraselen < PASSPHRASE_LEN) {
 				os_memcpy(psk->passphrase, passphrase, passphraselen);
-			psk->ispassphrase = 1;
+				psk->ispassphrase = 1;
+			}
 			psk->next = cache->psk;
 			cache->psk = psk;
 			psk = NULL;
 		}
+skip:
 		os_free(psk);
 		os_free(passphrase);
 	}
