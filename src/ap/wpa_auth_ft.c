@@ -2249,6 +2249,7 @@ static int wpa_ft_process_auth_req(struct wpa_state_machine *sm,
 	struct vlan_description vlan;
 	const u8 *identity, *radius_cui;
 	size_t identity_len = 0, radius_cui_len = 0;
+	struct os_reltime now;
 
 	*resp_ies = NULL;
 	*resp_ies_len = 0;
@@ -2279,6 +2280,9 @@ static int wpa_ft_process_auth_req(struct wpa_state_machine *sm,
 		return WLAN_STATUS_INVALID_FTIE;
 	}
 
+	if (os_memcmp(ftie->snonce, sm->SNonce, WPA_NONCE_LEN) != 0)
+		/* do not reuse A-Nonce if S-Nonce differs */
+		sm->ANonceTimestamp = 0;
 	os_memcpy(sm->SNonce, ftie->snonce, WPA_NONCE_LEN);
 
 	if (parse.r0kh_id == NULL) {
@@ -2332,16 +2336,35 @@ static int wpa_ft_process_auth_req(struct wpa_state_machine *sm,
 	sm->pmk_r1_name_valid = 1;
 	os_memcpy(sm->pmk_r1_name, pmk_r1_name, WPA_PMK_NAME_LEN);
 
+	/* if the second authentication requests comes in very very quickly,
+	 * it might be a client resend. Do not touch A-Nonce then.
+	 */
+
+	os_get_reltime(&now);
+	if (sm->ANonceTimestamp &&
+	    sm->ANonceTimestamp < now.sec - FT_ANONCE_TIMEOUT)
+		sm->ANonceTimestamp = 0;
+
+	if (sm->ANonceTimestamp) {
+		wpa_hexdump(MSG_DEBUG, "FT: Reuse ANonce",
+			    sm->ANonce, WPA_NONCE_LEN);
+		goto skip_anonce;
+	}
+
 	if (random_get_bytes(sm->ANonce, WPA_NONCE_LEN)) {
 		wpa_printf(MSG_DEBUG, "FT: Failed to get random data for "
 			   "ANonce");
 		return WLAN_STATUS_UNSPECIFIED_FAILURE;
 	}
 
-	wpa_hexdump(MSG_DEBUG, "FT: Received SNonce",
-		    sm->SNonce, WPA_NONCE_LEN);
 	wpa_hexdump(MSG_DEBUG, "FT: Generated ANonce",
 		    sm->ANonce, WPA_NONCE_LEN);
+
+	sm->ANonceTimestamp = now.sec;
+skip_anonce:
+
+	wpa_hexdump(MSG_DEBUG, "FT: Received SNonce",
+		    sm->SNonce, WPA_NONCE_LEN);
 
 	if (wpa_pmk_r1_to_ptk(pmk_r1, sm->SNonce, sm->ANonce, sm->addr,
 			      sm->wpa_auth->addr, pmk_r1_name,
@@ -2452,6 +2475,9 @@ u16 wpa_ft_validate_reassoc(struct wpa_state_machine *sm, const u8 *ies,
 
 	if (sm == NULL)
 		return WLAN_STATUS_UNSPECIFIED_FAILURE;
+
+	/* station entered ASSOC state, so next AUTH will get new ANonce */
+	sm->ANonceTimestamp = 0;
 
 	wpa_hexdump(MSG_DEBUG, "FT: Reassoc Req IEs", ies, ies_len);
 
