@@ -14,7 +14,8 @@
 #include <sys/ioctl.h>
 #include <linux/sockios.h>
 #include <linux/if_vlan.h>
-#include <linux/if_bridge.h>
+#include "bridge.h"
+#include "ifconfig.h"
 #endif /* CONFIG_FULL_DYNAMIC_VLAN */
 
 #include "utils/common.h"
@@ -31,13 +32,8 @@
 
 #ifdef CONFIG_FULL_DYNAMIC_VLAN
 
-#include <net/if.h>
-#include <sys/ioctl.h>
-#include <linux/sockios.h>
-#include <linux/if_vlan.h>
-#include "bridge.h"
-#include "ifconfig.h"
 
+#include "drivers/netlink.h"
 #include "drivers/priv_netlink.h"
 #include "utils/eloop.h"
 #include <stdarg.h>
@@ -46,7 +42,8 @@
 
 
 struct full_dynamic_vlan {
-	int s; /* socket on which to listen for new/removed interfaces. */
+	struct netlink_data * nl;
+	struct hapd_interfaces *interfaces;
 };
 
 struct dynamic_iface {
@@ -59,6 +56,13 @@ struct dynamic_iface {
 	int clean;
 
 	struct dynamic_iface *next;
+};
+
+static struct full_dynamic_vlan *full_dynamic_vlan = 0;
+
+struct vlan_handle_read_ifname_data {
+	char ifname[IFNAMSIZ + 1];
+	int del;
 };
 
 /* Increment ref counter for ifname and add clean flag.
@@ -704,177 +708,124 @@ skip_counting:
 	}
 }
 
-
-static void
-vlan_read_ifnames(struct nlmsghdr *h, size_t len, int del,
-		  struct hostapd_data *hapd)
+static int vlan_handle_read_ifname(struct hostapd_iface *iface, void *ctx)
 {
-	struct ifinfomsg *ifi;
-	int attrlen, nlmsg_len, rta_len;
-	struct rtattr *attr;
-	char ifname[IFNAMSIZ + 1];
+        struct vlan_handle_read_ifname_data *data = ctx;
+        struct hostapd_data *hapd;
+        size_t j;
 
-	if (len < sizeof(*ifi))
-		return;
+        for (j = 0; j < iface->num_bss; j++) {
+                hapd = iface->bss[j];
+		if (data->del)
+			vlan_dellink(data->ifname, hapd);
+		else
+			vlan_newlink(data->ifname, hapd);
+        }
 
-	ifi = NLMSG_DATA(h);
-
-	nlmsg_len = NLMSG_ALIGN(sizeof(struct ifinfomsg));
-
-	attrlen = h->nlmsg_len - nlmsg_len;
-	if (attrlen < 0)
-		return;
-
-	attr = (struct rtattr *) (((char *) ifi) + nlmsg_len);
-
-	os_memset(ifname, 0, sizeof(ifname));
-	rta_len = RTA_ALIGN(sizeof(struct rtattr));
-	while (RTA_OK(attr, attrlen)) {
-		if (attr->rta_type == IFLA_IFNAME) {
-			int n = attr->rta_len - rta_len;
-			if (n < 0)
-				break;
-
-			if ((size_t) n >= sizeof(ifname))
-				n = sizeof(ifname) - 1;
-			os_memcpy(ifname, ((char *) attr) + rta_len, n);
-
-		}
-
-		attr = RTA_NEXT(attr, attrlen);
-	}
-
-	if (!ifname[0])
-		return;
-	if (del && if_nametoindex(ifname)) {
-		 /* interface still exists, race condition ->
-		  * iface has just been recreated */
-		return;
-	}
-
-	wpa_printf(MSG_DEBUG,
-		   "VLAN: RTM_%sLINK: ifi_index=%d ifname=%s ifi_family=%d ifi_flags=0x%x (%s%s%s%s)",
-		   del ? "DEL" : "NEW",
-		   ifi->ifi_index, ifname, ifi->ifi_family, ifi->ifi_flags,
-		   (ifi->ifi_flags & IFF_UP) ? "[UP]" : "",
-		   (ifi->ifi_flags & IFF_RUNNING) ? "[RUNNING]" : "",
-		   (ifi->ifi_flags & IFF_LOWER_UP) ? "[LOWER_UP]" : "",
-		   (ifi->ifi_flags & IFF_DORMANT) ? "[DORMANT]" : "");
-
-	if (del)
-		vlan_dellink(ifname, hapd);
-	else
-		vlan_newlink(ifname, hapd);
+	return 0;
 }
 
-
-static void vlan_event_receive(int sock, void *eloop_ctx, void *sock_ctx)
+static void vlan_event_receive(void *ctx,struct ifinfomsg *ifi, u8 *buf, size_t len, int del)
 {
-	char buf[8192];
-	int left;
-	struct sockaddr_nl from;
-	socklen_t fromlen;
-	struct nlmsghdr *h;
-	struct hostapd_data *hapd = eloop_ctx;
+        int attrlen;
+        struct rtattr *attr;
+        char ifname[IFNAMSIZ + 1];
+	struct vlan_handle_read_ifname_data data;
 
-	fromlen = sizeof(from);
-	left = recvfrom(sock, buf, sizeof(buf), MSG_DONTWAIT,
-			(struct sockaddr *) &from, &fromlen);
-	if (left < 0) {
-		if (errno != EINTR && errno != EAGAIN)
-			wpa_printf(MSG_ERROR, "VLAN: %s: recvfrom failed: %s",
-				   __func__, strerror(errno));
+        ifname[0] = '\0';
+
+        attrlen = len;
+        attr = (struct rtattr *) buf;
+        while (RTA_OK(attr, attrlen)) {
+                switch (attr->rta_type) {
+                case IFLA_IFNAME:
+                        if (RTA_PAYLOAD(attr) >= IFNAMSIZ)
+                                break;
+                        os_memcpy(ifname, RTA_DATA(attr), RTA_PAYLOAD(attr));
+                        ifname[RTA_PAYLOAD(attr)] = '\0';
+                        break;
+                }
+                attr = RTA_NEXT(attr, attrlen);
+        }
+
+        if (!ifname[0])
 		return;
-	}
+	if (del && if_nametoindex(ifname))
+		return;
 
-	h = (struct nlmsghdr *) buf;
-	while (NLMSG_OK(h, left)) {
-		int len, plen;
+	data.del = del;
+	os_strlcpy(data.ifname, ifname, sizeof(data.ifname));
 
-		len = h->nlmsg_len;
-		plen = len - sizeof(*h);
-		if (len > left || plen < 0) {
-			wpa_printf(MSG_DEBUG, "VLAN: Malformed netlink "
-				   "message: len=%d left=%d plen=%d",
-				   len, left, plen);
-			break;
-		}
-
-		switch (h->nlmsg_type) {
-		case RTM_NEWLINK:
-			vlan_read_ifnames(h, plen, 0, hapd);
-			break;
-		case RTM_DELLINK:
-			vlan_read_ifnames(h, plen, 1, hapd);
-			break;
-		}
-
-		h = NLMSG_NEXT(h, left);
-	}
-
-	if (left > 0) {
-		wpa_printf(MSG_DEBUG, "VLAN: %s: %d extra bytes in the end of "
-			   "netlink message", __func__, left);
-	}
+	if (!full_dynamic_vlan ||
+	    !full_dynamic_vlan->interfaces ||
+	    !full_dynamic_vlan->interfaces->for_each_interface)
+	    return;
+	full_dynamic_vlan->interfaces->for_each_interface(
+		    full_dynamic_vlan->interfaces,
+		    vlan_handle_read_ifname,
+		    &data);
 }
 
-
-static struct full_dynamic_vlan *
-full_dynamic_vlan_init(struct hostapd_data *hapd)
+static void vlan_event_receive_newlink(void *ctx,struct ifinfomsg *ifi, u8 *buf, size_t len)
 {
-	struct sockaddr_nl local;
-	struct full_dynamic_vlan *priv;
+	vlan_event_receive(ctx, ifi, buf, len, 0);
+}
 
-	priv = os_zalloc(sizeof(*priv));
-	if (priv == NULL)
-		return NULL;
+static void vlan_event_receive_dellink(void *ctx,struct ifinfomsg *ifi, u8 *buf, size_t len)
+{
+	vlan_event_receive(ctx, ifi, buf, len, 1);
+}
 
-#ifndef CONFIG_VLAN_NETLINK
-	vlan_set_name_type(hapd->conf->ssid.vlan_naming ==
-			   DYNAMIC_VLAN_NAMING_WITH_DEVICE ?
-			   VLAN_NAME_TYPE_RAW_PLUS_VID_NO_PAD :
-			   VLAN_NAME_TYPE_PLUS_VID_NO_PAD);
-#endif /* CONFIG_VLAN_NETLINK */
+int vlan_global_init(struct hapd_interfaces *interfaces)
+{
+	struct netlink_config *cfg = 0;
 
-	priv->s = socket(PF_NETLINK, SOCK_RAW, NETLINK_ROUTE);
-	if (priv->s < 0) {
-		wpa_printf(MSG_ERROR, "VLAN: %s: socket(PF_NETLINK,SOCK_RAW,"
-			   "NETLINK_ROUTE) failed: %s",
-			   __func__, strerror(errno));
-		os_free(priv);
-		return NULL;
-	}
+	full_dynamic_vlan = os_zalloc(sizeof(*full_dynamic_vlan));
+	if (full_dynamic_vlan == NULL)
+		goto err;
 
-	os_memset(&local, 0, sizeof(local));
-	local.nl_family = AF_NETLINK;
-	local.nl_groups = RTMGRP_LINK;
-	if (bind(priv->s, (struct sockaddr *) &local, sizeof(local)) < 0) {
-		wpa_printf(MSG_ERROR, "VLAN: %s: bind(netlink) failed: %s",
-			   __func__, strerror(errno));
-		close(priv->s);
-		os_free(priv);
-		return NULL;
-	}
+	full_dynamic_vlan->interfaces = interfaces;
 
-	if (eloop_register_read_sock(priv->s, vlan_event_receive, hapd, NULL))
+	cfg = os_zalloc(sizeof(*cfg));
+	if (cfg == NULL)
+		goto err;
+
+        cfg->ctx = NULL;
+        cfg->newlink_cb = vlan_event_receive_newlink;
+        cfg->dellink_cb = vlan_event_receive_dellink;
+        full_dynamic_vlan->nl = netlink_init(cfg);
+        if (full_dynamic_vlan->nl == NULL)
 	{
-		close(priv->s);
-		os_free(priv);
-		return NULL;
+		wpa_printf(MSG_ERROR, "VLAN: %s: netlink_init failed: %s",
+			   __func__, strerror(errno));
+		goto err;
 	}
 
-	return priv;
+	return 0;
+err:
+	if (full_dynamic_vlan)
+	{
+		os_free(full_dynamic_vlan);
+		full_dynamic_vlan = NULL;
+	}
+	if (cfg)
+	{
+		os_free(cfg);
+		cfg = NULL;
+	}
+	return -1;
 }
 
 
-static void full_dynamic_vlan_deinit(struct full_dynamic_vlan *priv)
+void vlan_global_deinit()
 {
-	if (priv == NULL)
+	if (full_dynamic_vlan == NULL)
 		return;
-	eloop_unregister_read_sock(priv->s);
-	close(priv->s);
-	os_free(priv);
+	netlink_deinit(full_dynamic_vlan->nl);
+	os_free(full_dynamic_vlan);
+	full_dynamic_vlan = NULL;
 }
+
 #endif /* CONFIG_FULL_DYNAMIC_VLAN */
 
 
@@ -929,7 +880,12 @@ static void vlan_dynamic_remove(struct hostapd_data *hapd,
 int vlan_init(struct hostapd_data *hapd)
 {
 #ifdef CONFIG_FULL_DYNAMIC_VLAN
-	hapd->full_dynamic_vlan = full_dynamic_vlan_init(hapd);
+#ifndef CONFIG_VLAN_NETLINK
+	vlan_set_name_type(hapd->conf->ssid.vlan_naming ==
+			   DYNAMIC_VLAN_NAMING_WITH_DEVICE ?
+			   VLAN_NAME_TYPE_RAW_PLUS_VID_NO_PAD :
+			   VLAN_NAME_TYPE_PLUS_VID_NO_PAD);
+#endif /* CONFIG_VLAN_NETLINK */
 #endif /* CONFIG_FULL_DYNAMIC_VLAN */
 
 	if ((hapd->conf->ssid.dynamic_vlan != DYNAMIC_VLAN_DISABLED ||
@@ -960,11 +916,6 @@ int vlan_init(struct hostapd_data *hapd)
 void vlan_deinit(struct hostapd_data *hapd)
 {
 	vlan_dynamic_remove(hapd, hapd->conf->vlan);
-
-#ifdef CONFIG_FULL_DYNAMIC_VLAN
-	full_dynamic_vlan_deinit(hapd->full_dynamic_vlan);
-	hapd->full_dynamic_vlan = NULL;
-#endif /* CONFIG_FULL_DYNAMIC_VLAN */
 }
 
 
