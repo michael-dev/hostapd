@@ -979,11 +979,21 @@ skip_counting:
 			       "vlan_id=%d for WPA",
 			       sta->vlan_id);
 
-	ret = hostapd_drv_set_sta_vlan(iface, hapd, sta->addr, sta->vlan_id);
-	if (ret < 0) {
+	if (sta->flags & (WLAN_STA_AUTH | WLAN_STA_ASSOC)) {
+		ret = hostapd_drv_set_sta_vlan(iface, hapd, sta->addr,
+					       sta->vlan_id);
+		if (ret < 0)
+			hostapd_logger(hapd, sta->addr,
+				       HOSTAPD_MODULE_IEEE80211,
+				       HOSTAPD_LEVEL_WARNING, "could not bind "
+				       "the STA entry to vlan_id=%d",
+				       sta->vlan_id);
+	} else {
+		ret = -1;
 		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
-			       HOSTAPD_LEVEL_WARNING, "could not bind the STA "
-			       "entry to vlan_id=%d", sta->vlan_id);
+			       HOSTAPD_LEVEL_INFO, "station not authenticated, "
+			       "so skip setting vlan to vlan_id=%d",
+			       sta->vlan_id);
 	}
 
 	/* During 1x reauth, if the vlan id changes, then remove the old id. */
