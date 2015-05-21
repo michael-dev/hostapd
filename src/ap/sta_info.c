@@ -1132,6 +1132,17 @@ skip_counting:
 	if (wpa_auth_sta_set_vlan(sta->wpa_sm, sta->vlan_id) < 0)
 		wpa_printf(MSG_INFO, "Failed to update VLAN-ID for WPA");
 
+	if (!(sta->flags & (WLAN_STA_AUTH | WLAN_STA_ASSOC)) &&
+	    /* wired has no auth or assoc flag */
+	    !(hapd->iface->drv_flags & WPA_DRIVER_FLAGS_WIRED)) {
+		ret = -1;
+		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
+			       HOSTAPD_LEVEL_INFO, "station not authenticated, "
+			       "so skip setting vlan to vlan_id=%d",
+			       sta->vlan_id);
+		goto skip_set_vlan;
+	}
+
 	ret = hostapd_drv_set_sta_vlan(iface, hapd, sta->addr, sta->vlan_id);
 	if (ret < 0) {
 		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
@@ -1139,6 +1150,7 @@ skip_counting:
 			       "entry to vlan_id=%d", sta->vlan_id);
 	}
 
+skip_set_vlan:
 	/* During 1x reauth, if the vlan id changes, then remove the old id. */
 	if (old_vlanid > 0 && old_vlanid != sta->vlan_id)
 		vlan_remove_dynamic(hapd, old_vlanid);
