@@ -1262,13 +1262,9 @@ static int wpa_ft_process_auth_req(struct wpa_state_machine *sm,
 		    pmk_r1_name, WPA_PMK_NAME_LEN);
 
 	if (wpa_key_mgmt_ft_psk(sm->wpa_key_mgmt)) {
-		hostapd_logger(NULL, sm->addr, HOSTAPD_MODULE_IEEE80211,
-			       HOSTAPD_LEVEL_DEBUG, "FT: fetch psk");
 		if (wpa_ft_psk_pmk_r1(sm, pmk_r1_name, pmk_r1, &pairwise,
 				       &vlan) < 0)
 			return WLAN_STATUS_INVALID_PMKID;
-		hostapd_logger(NULL, sm->addr, HOSTAPD_MODULE_IEEE80211,
-			       HOSTAPD_LEVEL_DEBUG, "FT: fetch psk done");
 	} else
 	if (wpa_ft_fetch_pmk_r1(sm->wpa_auth, sm->addr, pmk_r1_name, pmk_r1,
 		    &pairwise, &vlan) < 0) {
