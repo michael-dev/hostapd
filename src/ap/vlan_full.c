@@ -771,11 +771,10 @@ static void vlan_get_bridge(const char *br_name, struct hostapd_data *hapd,
 }
 
 
+static void vlan_newlink_real(void *eloop_ctx, void *timeout_ctx);
 void vlan_newlink(const char *ifname, struct hostapd_data *hapd)
 {
-	char br_name[IFNAMSIZ];
 	struct hostapd_vlan *vlan;
-	int untagged, *tagged, i, notempty, vlan_filtering;
 
 	wpa_printf(MSG_DEBUG, "VLAN: vlan_newlink(%s)", ifname);
 
@@ -787,6 +786,18 @@ void vlan_newlink(const char *ifname, struct hostapd_data *hapd)
 	}
 	if (!vlan)
 		return;
+
+	eloop_cancel_timeout(vlan_newlink_real, vlan, hapd);
+	eloop_register_timeout(1, 0, vlan_newlink_real, vlan, hapd);
+}
+
+static void vlan_newlink_real(void *eloop_ctx, void *timeout_ctx)
+{
+	int untagged, *tagged, i, notempty, vlan_filtering;
+	char br_name[IFNAMSIZ];
+	struct hostapd_vlan *vlan = eloop_ctx;
+	struct hostapd_data *hapd = timeout_ctx;
+	const char* ifname = vlan->ifname;
 
 	vlan->configured = 1;
 
@@ -936,6 +947,8 @@ void vlan_dellink(const char *ifname, struct hostapd_data *hapd)
 	}
 	if (!vlan)
 		return;
+
+	eloop_cancel_timeout(vlan_newlink_real, vlan, hapd);
 
 #ifdef CONFIG_RSN_PREAUTH_COPY
 	if (vlan->rsn_preauth) {
