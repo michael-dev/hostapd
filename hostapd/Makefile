@@ -173,11 +173,23 @@ ifdef CONFIG_NO_VLAN
 CFLAGS += -DCONFIG_NO_VLAN
 else
 OBJS += ../src/ap/vlan_init.o
+OBJS += ../src/ap/vlan_if.o
 ifdef CONFIG_VLAN_NETLINK
 ifdef CONFIG_FULL_DYNAMIC_VLAN
 OBJS += ../src/ap/vlan_util.o
 endif
 CFLAGS += -DCONFIG_VLAN_NETLINK
+endif
+ifdef CONFIG_VLAN_ASYNC
+CFLAGS += -DCONFIG_VLAN_ASYNC
+OBJS += ../src/ap/vlan_async.o
+else
+OBJS += ../src/ap/vlan_sync.o
+endif
+ifndef CONFIG_VLAN_NETLINK
+ifndef CONFIG_VLAN_ASYNC
+OBJS += ../src/ap/vlan_ioctl.o
+endif
 endif
 ifdef CONFIG_MACVLAN
 CFLAGS += -DCONFIG_MACVLAN
@@ -844,6 +856,8 @@ ifdef CONFIG_FULL_DYNAMIC_VLAN
 # define CONFIG_FULL_DYNAMIC_VLAN to have hostapd manipulate bridges
 # and vlan interfaces for the vlan feature.
 CFLAGS += -DCONFIG_FULL_DYNAMIC_VLAN
+OBJS += ../src/ap/vlan_iface.o
+OBJS += ../src/ap/vlan_script.o
 endif
 
 ifdef NEED_BASE64

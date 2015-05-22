@@ -10,11 +10,18 @@
 
 #include "utils/includes.h"
 #ifdef CONFIG_FULL_DYNAMIC_VLAN
-#include <net/if.h>
+#include "vlan_if.h"
+#ifndef CONFIG_VLAN_ASYNC
+#ifndef CONFIG_VLAN_NETLINK
 #include <sys/ioctl.h>
 #include <linux/sockios.h>
 #include <linux/if_vlan.h>
-#include "bridge.h"
+#include "vlan_ioctl.h"
+#endif /* VLAN_NETLINK */
+#else /* VLAN_ASYNC */
+#include "netlink/cache.h"
+#include "netlink/route/link.h"
+#endif /* VLAN_ASYNC */
 #include "ifconfig.h"
 #endif /* CONFIG_FULL_DYNAMIC_VLAN */
 
@@ -23,7 +30,6 @@
 #include "ap_config.h"
 #include "ap_drv_ops.h"
 #include "vlan_init.h"
-#include "vlan_util.h"
 #include "wpa_auth_glue.h"
 #ifdef CONFIG_RSN_PREAUTH_COPY
 #include "preauth_auth.h"
@@ -33,417 +39,34 @@
 #ifdef CONFIG_FULL_DYNAMIC_VLAN
 
 
+#ifndef CONFIG_VLAN_ASYNC
 #include "drivers/netlink.h"
 #include "drivers/priv_netlink.h"
+#endif /* CONFIG_VLAN_ASYNC */
 #include "utils/eloop.h"
-#include <stdarg.h>
-#include <sys/types.h>
-#include <sys/wait.h>
+#include "vlan_priv.h"
 
 
+#ifndef CONFIG_VLAN_ASYNC
+#include "vlan_sync.h"
+#else
+#include "vlan_async.h"
+#endif
+
+
+#ifndef CONFIG_VLAN_ASYNC
 struct full_dynamic_vlan {
 	struct netlink_data * nl;
 	struct hapd_interfaces *interfaces;
 };
 
-struct dynamic_iface {
-	char ifname[IFNAMSIZ+1];
-	int usage;
-
-	#define DVLAN_CLEAN_BR         0x1
-	#define DVLAN_CLEAN_VLAN       0x2
-	#define DVLAN_CLEAN_VLAN_PORT  0x4
-	int clean;
-
-	struct dynamic_iface *next;
-};
-
 static struct full_dynamic_vlan *full_dynamic_vlan = 0;
+#endif /* CONFIG_VLAN_ASYNC */
 
 struct vlan_handle_read_ifname_data {
 	char ifname[IFNAMSIZ + 1];
 	int del;
 };
-
-/* Increment ref counter for ifname and add clean flag.
- * If not in list, add it only if some flags are given.
- */
-static void dyn_iface_get(char* ifname, int clean, struct hostapd_data *hapd) {
-	struct dynamic_iface *next, **dynamic_ifaces;
-	struct hapd_interfaces *interfaces;
-
-	interfaces = hapd->iface->interfaces;
-	dynamic_ifaces = (struct dynamic_iface**) &interfaces->vlan_priv;
-
-	for (next = *dynamic_ifaces; next; next = next->next) {
-		if (os_strcmp(ifname, next->ifname) == 0)
-			break;
-	}
-
-	if (next) {
-		next->usage++;
-		next->clean |= clean;
-		return;
-	}
-
-	if (!clean)
-		return;
-
-	next = os_zalloc(sizeof(*next));
-	if (!next)
-		return;
-	os_strlcpy(next->ifname, ifname, sizeof(next->ifname));
-	next->usage = 1;
-	next->clean = clean;
-	next->next = *dynamic_ifaces;
-	*dynamic_ifaces = next;
-}
-
-/* Decrement reference counter for given ifname.
- * Return clean flag iff reference counter was decreased to zero, else zero
- */
-static int dyn_iface_put(char* ifname, struct hostapd_data *hapd) {
-	struct dynamic_iface *next, *prev = NULL, **dynamic_ifaces;
-	struct hapd_interfaces *interfaces;
-	int clean;
-
-	interfaces = hapd->iface->interfaces;
-	dynamic_ifaces = (struct dynamic_iface**) &interfaces->vlan_priv;
-
-	for (next = *dynamic_ifaces; next; next = next->next) {
-		if (os_strcmp(ifname, next->ifname) == 0)
-			break;
-		prev = next;
-	}
-
-	if (!next)
-		return 0;
-
-	next->usage--;
-	if (next->usage)
-		return 0;
-
-	if (prev)
-		prev->next = next->next;
-	else
-		*dynamic_ifaces = next->next;
-	clean = next->clean;
-	os_free(next);
-
-	return clean;
-}
-
-
-int run_script(char* output, int size, const char* script, ...)
-{
-	va_list ap;
-	char *args[100];
-	int argno = 0;
-	pid_t pid;
-	siginfo_t status;
-	int filedes[2];
-
-	va_start(ap, script);
-
-	while (1) {
-		args[argno] = va_arg(ap, char *);
-		if (!args[argno])
-			break;
-		argno++;
-		if (argno >= 100)
-			break;
-	}
-
-	if (output) {
-		if (pipe(filedes) < 0) {
-			perror("pipe");
-			return -1;
-		}
-	}
-
-	pid = fork();
-	if (pid < 0) {
-		if (output) {
-			close(filedes[1]);
-			close(filedes[0]);
-		}
-		perror("fork");
-		return -1;
-	} else if (pid == 0) {
-		if (output) {
-			while ((dup2(filedes[1], STDOUT_FILENO) == -1) && (errno == EINTR)) {};
-			close(filedes[1]);
-			close(filedes[0]);
-		}
-		execv(script, args);
-		perror("execv");
-		exit(1);
-	}
-	if (output)
-		close(filedes[1]);
-	if (waitid(P_PID, pid, &status, WEXITED) < 0)
-		return -1;
-	if (status.si_code != CLD_EXITED)
-		return -1;
-	if (status.si_status != 0)
-		return 1;
-	if (!output)
-		return 0;
-
-	for (;;) {
-		if (size <= 0)
-			break;
-		if (read(filedes[0], output, 1) <= 0)
-			break;
-		if (*output == '\n') {
-			*output = '\0';
-			break;
-		}
-		output++;
-		size--;
-	}
-
-	close(filedes[0]);
-	return 0;
-}
-
-
-char* itoa(int i)
-{
-	static char buf[20];
-	os_snprintf(buf, sizeof(buf), "%d", i);
-	return buf;
-}
-
-
-/*
- * These are only available in recent linux headers (without the leading
- * underscore).
- */
-#define _GET_VLAN_REALDEV_NAME_CMD	8
-#define _GET_VLAN_VID_CMD		9
-
-#ifndef CONFIG_VLAN_NETLINK
-
-int vlan_rem(const char *if_name)
-{
-	int fd;
-	struct vlan_ioctl_args if_request;
-
-	wpa_printf(MSG_DEBUG, "VLAN: vlan_rem(%s)", if_name);
-	if ((os_strlen(if_name) + 1) > sizeof(if_request.device1)) {
-		wpa_printf(MSG_ERROR, "VLAN: Interface name too long: '%s'",
-			   if_name);
-		return -1;
-	}
-
-	if ((fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-		wpa_printf(MSG_ERROR, "VLAN: %s: socket(AF_INET,SOCK_STREAM) "
-			   "failed: %s", __func__, strerror(errno));
-		return -1;
-	}
-
-	os_memset(&if_request, 0, sizeof(if_request));
-
-	os_strlcpy(if_request.device1, if_name, sizeof(if_request.device1));
-	if_request.cmd = DEL_VLAN_CMD;
-
-	if (ioctl(fd, SIOCSIFVLAN, &if_request) < 0) {
-		wpa_printf(MSG_ERROR, "VLAN: %s: DEL_VLAN_CMD failed for %s: "
-			   "%s", __func__, if_name, strerror(errno));
-		close(fd);
-		return -1;
-	}
-
-	close(fd);
-	return 0;
-}
-
-
-/*
-	Add a vlan interface with VLAN ID 'vid' and tagged interface
-	'if_name'.
-
-	returns -1 on error
-	returns 1 if the interface already exists
-	returns 0 otherwise
-*/
-int vlan_add(const char *if_name, int vid, const char *vlan_if_name)
-{
-	int fd;
-	struct vlan_ioctl_args if_request;
-
-	wpa_printf(MSG_DEBUG, "VLAN: vlan_add(if_name=%s, vid=%d)",
-		   if_name, vid);
-	ifconfig_up(if_name);
-
-	if ((os_strlen(if_name) + 1) > sizeof(if_request.device1)) {
-		wpa_printf(MSG_ERROR, "VLAN: Interface name too long: '%s'",
-			   if_name);
-		return -1;
-	}
-
-	if ((fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-		wpa_printf(MSG_ERROR, "VLAN: %s: socket(AF_INET,SOCK_STREAM) "
-			   "failed: %s", __func__, strerror(errno));
-		return -1;
-	}
-
-	os_memset(&if_request, 0, sizeof(if_request));
-
-	/* Determine if a suitable vlan device already exists. */
-
-	os_snprintf(if_request.device1, sizeof(if_request.device1), "vlan%d",
-		    vid);
-
-	if_request.cmd = _GET_VLAN_VID_CMD;
-
-	if (ioctl(fd, SIOCSIFVLAN, &if_request) == 0) {
-
-		if (if_request.u.VID == vid) {
-			if_request.cmd = _GET_VLAN_REALDEV_NAME_CMD;
-
-			if (ioctl(fd, SIOCSIFVLAN, &if_request) == 0 &&
-			    os_strncmp(if_request.u.device2, if_name,
-				       sizeof(if_request.u.device2)) == 0) {
-				close(fd);
-				wpa_printf(MSG_DEBUG, "VLAN: vlan_add: "
-					   "if_name %s exists already",
-					   if_request.device1);
-				return 1;
-			}
-		}
-	}
-
-	/* A suitable vlan device does not already exist, add one. */
-
-	os_memset(&if_request, 0, sizeof(if_request));
-	os_strlcpy(if_request.device1, if_name, sizeof(if_request.device1));
-	if_request.u.VID = vid;
-	if_request.cmd = ADD_VLAN_CMD;
-
-	if (ioctl(fd, SIOCSIFVLAN, &if_request) < 0) {
-		wpa_printf(MSG_ERROR, "VLAN: %s: ADD_VLAN_CMD failed for %s: "
-			   "%s",
-			   __func__, if_request.device1, strerror(errno));
-		close(fd);
-		return -1;
-	}
-
-	close(fd);
-	return 0;
-}
-
-
-static int vlan_set_name_type(unsigned int name_type)
-{
-	int fd;
-	struct vlan_ioctl_args if_request;
-
-	wpa_printf(MSG_DEBUG, "VLAN: vlan_set_name_type(name_type=%u)",
-		   name_type);
-	if ((fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-		wpa_printf(MSG_ERROR, "VLAN: %s: socket(AF_INET,SOCK_STREAM) "
-			   "failed: %s", __func__, strerror(errno));
-		return -1;
-	}
-
-	os_memset(&if_request, 0, sizeof(if_request));
-
-	if_request.u.name_type = name_type;
-	if_request.cmd = SET_VLAN_NAME_TYPE_CMD;
-	if (ioctl(fd, SIOCSIFVLAN, &if_request) < 0) {
-		wpa_printf(MSG_ERROR, "VLAN: %s: SET_VLAN_NAME_TYPE_CMD "
-			   "name_type=%u failed: %s",
-			   __func__, name_type, strerror(errno));
-		close(fd);
-		return -1;
-	}
-
-	close(fd);
-	return 0;
-}
-
-#endif /* CONFIG_VLAN_NETLINK */
-
-static void vlan_newlink_tagged(int vlan_naming, char* tagged_interface,
-				char* br_name, int vid,
-				struct hostapd_data *hapd)
-{
-	char vlan_ifname[IFNAMSIZ];
-	int clean;
-	char *script = hapd->conf->ssid.vlan_script;
-
-	if (vlan_naming ==  DYNAMIC_VLAN_NAMING_WITH_DEVICE)
-		os_snprintf(vlan_ifname, sizeof(vlan_ifname), "%s.%d",
-			     tagged_interface,  vid);
-	else
-		os_snprintf(vlan_ifname, sizeof(vlan_ifname), "vlan%d",
-			     vid);
-
-	clean = 0;
-	ifconfig_up(tagged_interface);
-
-	if (script) {
-		if (!run_script(NULL, 0, script, "br_addif", br_name, tagged_interface, "tagged", itoa(vid)))
-			clean |= DVLAN_CLEAN_VLAN_PORT;
-	} else {
-		if (!vlan_add(tagged_interface, vid, vlan_ifname))
-			clean |= DVLAN_CLEAN_VLAN;
-
-		if (!br_addif(br_name, vlan_ifname))
-			clean |= DVLAN_CLEAN_VLAN_PORT;
-	}
-
-	dyn_iface_get(vlan_ifname, clean, hapd);
-
-	ifconfig_up(vlan_ifname);
-}
-
-static void vlan_bridge_name(char *br_name, struct hostapd_data *hapd, int vid)
-{
-	char *tagged_interface = hapd->conf->ssid.vlan_tagged_interface;
-	char *script = hapd->conf->ssid.vlan_script;
-
-	if (script && !run_script(br_name, IFNAMSIZ, script, "br_name", hapd->conf->vlan_bridge, tagged_interface, itoa(vid)))
-		return;
-
-	if (hapd->conf->vlan_bridge[0]) {
-		os_snprintf(br_name, IFNAMSIZ, "%s%d",
-			    hapd->conf->vlan_bridge,  vid);
-	} else if (tagged_interface) {
-		os_snprintf(br_name, IFNAMSIZ, "br%s.%d",
-			    tagged_interface, vid);
-	} else {
-		os_snprintf(br_name, IFNAMSIZ,
-		            "brvlan%d", vid);
-	}
-}
-
-
-static void vlan_get_bridge(char *br_name, struct hostapd_data *hapd, int vid)
-{
-	char *tagged_interface = hapd->conf->ssid.vlan_tagged_interface;
-	int vlan_naming = hapd->conf->ssid.vlan_naming;
-	char *script = hapd->conf->ssid.vlan_script;
-	int ret;
-
-	if (!script)
-		ret = br_addbr(br_name);
-	else
-		ret = run_script(NULL, 0, script, "br_addbr", br_name, itoa(vid));
-
-	if (!ret)
-		dyn_iface_get(br_name, DVLAN_CLEAN_BR, hapd);
-	else
-		dyn_iface_get(br_name, 0, hapd);
-
-	ifconfig_up(br_name);
-
-	if (tagged_interface)
-		vlan_newlink_tagged(vlan_naming, tagged_interface, br_name,
-				    vid, hapd);
-}
 
 static int vlan_if_add(struct hostapd_data *hapd, struct hostapd_vlan *vlan,
 		       int existsok)
@@ -458,7 +81,7 @@ static int vlan_if_add(struct hostapd_data *hapd, struct hostapd_vlan *vlan,
 		return -1;
 	}
 
-	if (!if_nametoindex(vlan->ifname))
+	if (!vlan_if_nametoindex(vlan->ifname))
 		ret = hostapd_vlan_if_add(hapd, vlan->ifname);
 	else if (!existsok)
 		return -1;
@@ -489,7 +112,7 @@ static int vlan_if_add(struct hostapd_data *hapd, struct hostapd_vlan *vlan,
 }
 
 
-static int vlan_if_remove(struct hostapd_data *hapd, struct hostapd_vlan *vlan)
+int vlan_if_remove(struct hostapd_data *hapd, struct hostapd_vlan *vlan)
 {
 	int ret;
 	ret = hostapd_desetup_wpa_vlan(hapd, vlan->vlan_id);
@@ -500,234 +123,127 @@ static int vlan_if_remove(struct hostapd_data *hapd, struct hostapd_vlan *vlan)
 	return hostapd_vlan_if_remove(hapd, vlan->ifname);
 }
 
-
-static void vlan_newlink_real(void *eloop_ctx, void *timeout_ctx)
+void vlan_drop_and_free(struct hostapd_vlan *vlan, struct hostapd_data *hapd)
 {
-	struct hostapd_vlan *vlan0 = eloop_ctx;
-	struct hostapd_data *hapd = timeout_ctx;
-	char br_name[IFNAMSIZ];
-	struct hostapd_vlan *vlan;
-	int untagged, *tagged, i, notempty;
-	char *script = hapd->conf->ssid.vlan_script;
-	int ret;
-	char *ifname;
+	struct hostapd_vlan *first, *curr, *prev;
 
-	for (vlan = hapd->conf->vlan; vlan; vlan = vlan->next) {
-		if (vlan != vlan0)
-			continue;
+	wpa_printf(MSG_DEBUG, "VLAN: vlan_drop_and_free(%s)", vlan->ifname);
 
-		if (vlan->configured)
-			continue;
+	if (vlan_if_nametoindex(vlan->ifname) && vlan_if_remove(hapd, vlan))
+		wpa_printf(MSG_ERROR, "VLAN: Could not remove VLAN "
+			   "iface: %s: %s",
+			   vlan->ifname, strerror(errno));
 
-		ifname = vlan->ifname;
 
-		wpa_printf(MSG_DEBUG, "VLAN: vlan_newlink(%s)", ifname);
-
-		vlan->configured = 1;
-
-		notempty = vlan->vlan_desc.notempty;
-		untagged = vlan->vlan_desc.untagged;
-		tagged = vlan->vlan_desc.tagged;
-
-		if (!notempty) {
-			/* non-VLAN sta */
-			if (hapd->conf->bridge[0]) {
-				if (script)
-					ret = run_script(NULL, 0, script, "br_addif", hapd->conf->bridge, ifname);
-				else
-					ret = br_addif(hapd->conf->bridge, ifname);
-				if (!ret)
-					vlan->clean |= DVLAN_CLEAN_WLAN_PORT;
-			}
-		} else if (untagged > 0 && untagged <= MAX_VLAN_ID) {
-			vlan_bridge_name(br_name, hapd, untagged);
-
-			vlan_get_bridge(br_name, hapd, untagged);
-
-			if (script)
-				ret = run_script(NULL, 0, script, "br_addif", br_name, ifname, "untagged", itoa(untagged));
-			else
-				ret = br_addif(br_name, ifname);
-			if (!ret)
-				vlan->clean |= DVLAN_CLEAN_WLAN_PORT;
-		}
-
-		for (i = 0; i < MAX_NUM_TAGGED_VLAN && tagged[i]; i++) {
-			if (tagged[i] == untagged)
-				continue;
-			if (tagged[i] <= 0 || tagged[i] > MAX_VLAN_ID)
-				continue;
-			if (i > 0 && tagged[i] == tagged[i-1])
-				continue;
-			vlan_bridge_name(br_name, hapd, tagged[i]);
-			vlan_get_bridge(br_name, hapd, tagged[i]);
-			vlan_newlink_tagged(DYNAMIC_VLAN_NAMING_WITH_DEVICE,
-					    ifname, br_name, tagged[i], hapd);
-		}
-
-		ifconfig_up(ifname);
-
-#ifdef CONFIG_RSN_PREAUTH_COPY
-		if (!vlan->rsn_preauth)
-			vlan->rsn_preauth = rsn_preauth_snoop_init(hapd, vlan->ifname);
-#endif /* CONFIG_RSN_PREAUTH_COPY */
-
-		break;
-	}
-}
-
-static void vlan_newlink(char *ifname, struct hostapd_data *hapd)
-{
-	struct hostapd_vlan *vlan;
-
-	for (vlan = hapd->conf->vlan; vlan; vlan = vlan->next) {
-		if (vlan->configured)
-			continue;
-		if (os_strcmp(ifname, vlan->ifname))
-			continue;
-		eloop_cancel_timeout(vlan_newlink_real, vlan, hapd);
-		eloop_register_timeout(1, 0,
-				       vlan_newlink_real, vlan, hapd);
-		break;
-	}
-}
-
-static void vlan_dellink_tagged(int vlan_naming, char* tagged_interface,
-				char* br_name, int vid,
-				struct hostapd_data *hapd)
-{
-	char vlan_ifname[IFNAMSIZ];
-	int clean;
-	char *script = hapd->conf->ssid.vlan_script;
-
-	if (vlan_naming ==  DYNAMIC_VLAN_NAMING_WITH_DEVICE)
-		os_snprintf(vlan_ifname, sizeof(vlan_ifname), "%s.%d",
-			     tagged_interface,  vid);
-	else
-		os_snprintf(vlan_ifname, sizeof(vlan_ifname), "vlan%d",
-			     vid);
-
-	clean = dyn_iface_put(vlan_ifname, hapd);
-
-	if (script) {
-		if (clean & DVLAN_CLEAN_VLAN_PORT)
-			run_script(NULL, 0, script, "br_delif", br_name, tagged_interface, "tagged", itoa(vid));
-	} else {
-		if (clean & DVLAN_CLEAN_VLAN_PORT)
-			br_delif(br_name, vlan_ifname);
-
-		if (clean & DVLAN_CLEAN_VLAN) {
-			ifconfig_down(vlan_ifname);
-			vlan_rem(vlan_ifname);
-		}
-	}
-}
-
-static void vlan_put_bridge(char *br_name, struct hostapd_data *hapd, int vid)
-{
-	int clean;
-	char *tagged_interface = hapd->conf->ssid.vlan_tagged_interface;
-	int vlan_naming = hapd->conf->ssid.vlan_naming;
-	char *script = hapd->conf->ssid.vlan_script;
-
-	if (tagged_interface)
-		vlan_dellink_tagged(vlan_naming, tagged_interface, br_name,
-				    vid, hapd);
-
-	clean = dyn_iface_put(br_name, hapd);
-
-	if (!(clean & DVLAN_CLEAN_BR))
-		return;
-	if (!script && br_getnumports(br_name) != 0)
-		return;
-
-	ifconfig_down(br_name);
-
-	if (script)
-		run_script(NULL, 0, script, "br_delbr", br_name, itoa(vid));
-	else
-		br_delbr(br_name);
-}
-
-static void vlan_dellink(char *ifname, struct hostapd_data *hapd)
-{
-	struct hostapd_vlan *first, *prev, *vlan = hapd->conf->vlan;
-	char br_name[IFNAMSIZ];
-	int untagged, i, *tagged, notempty;
-	char *script = hapd->conf->ssid.vlan_script;
-
-	wpa_printf(MSG_DEBUG, "VLAN: vlan_dellink(%s)", ifname);
-
-	first = prev = vlan;
-
-	while (vlan) {
-		if (os_strcmp(ifname, vlan->ifname)) {
-			prev = vlan;
-			vlan = vlan->next;
+	first = prev = curr = hapd->conf->vlan;
+	while (curr) {
+		if (curr != vlan) {
+			prev = curr;
+			curr = curr->next;
 			continue;
 		}
-
-		if (!vlan->configured)
-			goto skip_counting;
-
-		eloop_cancel_timeout(vlan_newlink_real, vlan, hapd);
-
-#ifdef CONFIG_RSN_PREAUTH_COPY
-		rsn_preauth_snoop_deinit(hapd, vlan->ifname,
-					 vlan->rsn_preauth);
-#endif /* CONFIG_RSN_PREAUTH_COPY */
-
-		notempty = vlan->vlan_desc.notempty;
-		untagged = vlan->vlan_desc.untagged;
-		tagged = vlan->vlan_desc.tagged;
-
-		for (i = 0; i < MAX_NUM_TAGGED_VLAN && tagged[i]; i++) {
-			if (tagged[i] == untagged)
-				continue;
-			if (tagged[i] <= 0 || tagged[i] > MAX_VLAN_ID)
-				continue;
-			if (i > 0 && tagged[i] == tagged[i-1])
-				continue;
-			vlan_bridge_name(br_name, hapd, tagged[i]);
-			vlan_dellink_tagged(DYNAMIC_VLAN_NAMING_WITH_DEVICE,
-					    ifname, br_name, tagged[i], hapd);
-			vlan_put_bridge(br_name, hapd, tagged[i]);
-		}
-
-		if (!notempty) {
-			/* non-VLAN sta */
-			if (hapd->conf->bridge[0] && vlan->clean & DVLAN_CLEAN_WLAN_PORT) {
-				if (script)
-					run_script(NULL, 0, script, "br_delif", hapd->conf->bridge, ifname);
-				else
-					br_delif(hapd->conf->bridge, ifname);
-			}
-		} else if (untagged > 0 && untagged <= MAX_VLAN_ID) {
-			vlan_bridge_name(br_name, hapd, untagged);
-
-			if (vlan->clean & DVLAN_CLEAN_WLAN_PORT) {
-				if (script)
-					run_script(NULL, 0, script, "br_delif", br_name, vlan->ifname, "untagged", itoa(untagged));
-				else
-					br_delif(br_name, vlan->ifname);
-			}
-
-			vlan_put_bridge(br_name, hapd, untagged);
-		}
-
-skip_counting:
-		if (if_nametoindex(vlan->ifname) && vlan_if_remove(hapd, vlan))
-			wpa_printf(MSG_ERROR, "VLAN: Could not remove VLAN "
-				   "iface: %s: %s",
-				   vlan->ifname, strerror(errno));
-
 		if (vlan == first) {
 			hapd->conf->vlan = vlan->next;
 		} else {
 			prev->next = vlan->next;
 		}
 		os_free(vlan);
+		break;
+	}
+}
 
+
+static void vlan_newlink_cb(void *eloop_ctx, void *timeout_ctx)
+{
+	struct hostapd_vlan *vlan = eloop_ctx;
+	struct hostapd_data *hapd = timeout_ctx;
+
+	if (vlan->configured)
+		return;
+
+	wpa_printf(MSG_DEBUG, "VLAN: vlan_newlink(%s)", vlan->ifname);
+
+	vlan->configured = 1;
+
+	ifconfig_up(vlan->ifname);
+
+#ifdef CONFIG_RSN_PREAUTH_COPY
+	if (!vlan->rsn_preauth)
+		vlan->rsn_preauth = rsn_preauth_snoop_init(hapd, vlan->ifname);
+#endif /* CONFIG_RSN_PREAUTH_COPY */
+
+	vlan_configure(vlan, hapd);
+}
+
+
+static void vlan_dellink_cb(void *eloop_ctx, void *timeout_ctx)
+{
+	struct hostapd_vlan *vlan = eloop_ctx;
+	struct hostapd_data *hapd = timeout_ctx;
+
+	wpa_printf(MSG_DEBUG, "VLAN: vlan_dellink(%s)", vlan->ifname);
+
+#ifdef CONFIG_VLAN_ASYNC
+	if (vlan->removing)
+		return;
+#endif
+	if (!vlan->configured) {
+		// delete and free now!
+		vlan_drop_and_free(vlan, hapd);
+		return;
+	}
+
+	vlan->configured = 0;
+
+	ifconfig_down(vlan->ifname);
+
+#ifdef CONFIG_RSN_PREAUTH_COPY
+	rsn_preauth_snoop_deinit(hapd, vlan->ifname, vlan->rsn_preauth);
+#endif /* CONFIG_RSN_PREAUTH_COPY */
+
+	vlan_deconfigure(vlan, hapd);
+}
+
+
+static void vlan_newlink(char *ifname, struct hostapd_data *hapd)
+{
+	struct hostapd_vlan *vlan;
+
+	for (vlan = hapd->conf->vlan; vlan; vlan = vlan->next) {
+		if (os_strcmp(ifname, vlan->ifname))
+			continue;
+		if (vlan->configured)
+			break;
+
+		eloop_cancel_timeout(vlan_newlink_cb, vlan, hapd);
+		eloop_cancel_timeout(vlan_dellink_cb, vlan, hapd);
+		eloop_register_timeout(0, 0,
+				       vlan_newlink_cb, vlan, hapd);
+		break;
+	}
+}
+
+
+static void vlan_dellink(char *ifname, struct hostapd_data *hapd)
+{
+	struct hostapd_vlan *vlan = hapd->conf->vlan;
+
+	for (vlan = hapd->conf->vlan; vlan; vlan = vlan->next) {
+		if (os_strcmp(ifname, vlan->ifname))
+			continue;
+#ifdef CONFIG_VLAN_ASYNC
+		if (vlan->removing)
+			continue;
+#endif /* CONFIG_VLAN_ASYNC */
+
+		eloop_cancel_timeout(vlan_newlink_cb, vlan, hapd);
+		eloop_cancel_timeout(vlan_dellink_cb, vlan, hapd);
+
+		if (!vlan->configured)
+			vlan_drop_and_free(vlan, hapd);
+		else
+			eloop_register_timeout(0, 0, vlan_dellink_cb, vlan,
+					       hapd);
 		break;
 	}
 }
@@ -749,6 +265,8 @@ static int vlan_handle_read_ifname(struct hostapd_iface *iface, void *ctx)
 	return 0;
 }
 
+
+#ifndef CONFIG_VLAN_ASYNC
 static void vlan_event_receive(void *ctx,struct ifinfomsg *ifi, u8 *buf, size_t len, int del)
 {
         int attrlen;
@@ -774,7 +292,7 @@ static void vlan_event_receive(void *ctx,struct ifinfomsg *ifi, u8 *buf, size_t 
 
         if (!ifname[0])
 		return;
-	if (del && if_nametoindex(ifname))
+	if (del && vlan_if_nametoindex(ifname))
 		return;
 
 	data.del = del;
@@ -800,10 +318,151 @@ static void vlan_event_receive_dellink(void *ctx,struct ifinfomsg *ifi, u8 *buf,
 	vlan_event_receive(ctx, ifi, buf, len, 1);
 }
 
+#else /* CONFIG_VLAN_ASYNC */
+static void
+vlan_handle_wait_for_iface_hapd(struct hostapd_data *hapd,
+				struct vlan_handle_read_ifname_data *data)
+{
+	struct hostapd_vlan *vlan;
+
+	for (vlan = hapd->conf->vlan; vlan; vlan = vlan->next) {
+		if (!vlan->wait_for_iface_cb)
+			continue;
+		if (os_strcmp(data->ifname, vlan->wait_for_iface))
+			continue;
+		if (BIT(vlan->waiting) & data->del)
+			vlan->wait_for_iface_cb(vlan, hapd);
+	}
+}
+
+static int vlan_handle_wait_for_iface(struct hostapd_iface *iface, void *ctx)
+{
+        struct vlan_handle_read_ifname_data *data = ctx;
+        struct hostapd_data *hapd;
+        size_t j;
+
+        for (j = 0; j < iface->num_bss; j++) {
+                hapd = iface->bss[j];
+		vlan_handle_wait_for_iface_hapd(hapd, data);
+        }
+
+	return 0;
+}
+
+
+static void onlinkchange(struct nl_cache *cache, struct nl_object *obj, int action, void *arg)
+{
+	struct hapd_interfaces *interfaces = arg;
+	struct vlan_handle_read_ifname_data data;
+	struct rtnl_link *link;
+	char *ifname;
+
+	if (!interfaces || !interfaces->for_each_interface)
+		return;
+
+	if (os_strcmp(nl_object_get_type(obj),"route/link"))
+		return; /* invalid type */
+
+	link = (struct rtnl_link *) obj;
+	ifname = rtnl_link_get_name(link);
+
+        if (!ifname || !ifname[0])
+		return;
+
+	os_memset(&data, 0, sizeof(data));
+	os_strlcpy(data.ifname, ifname, sizeof(data.ifname));
+
+	if (action == 1 || (action == 2 && !vlan_if_nametoindex(ifname))) { /* NEWLINK or DELLINK */
+		data.del = (action == 2); /* NL_ACT_DEL */
+
+		interfaces->for_each_interface(
+			    interfaces,
+			    vlan_handle_read_ifname,
+			    &data);
+	}
+
+	data.del = 0;
+	if (action == 1)
+		data.del |= BIT(VLAN_EVENT_NEWLINK);
+	if (action == 2)
+		data.del |= BIT(VLAN_EVENT_DELLINK);
+
+	if (rtnl_link_get_flags(link) & IFF_UP)
+		data.del |= BIT(VLAN_EVENT_IFF_UP);
+	else
+		data.del |= BIT(VLAN_EVENT_IFF_DOWN);
+	
+	if (rtnl_link_get_master(link))
+		data.del |= BIT(VLAN_EVENT_SLAVE);
+	else
+		data.del |= BIT(VLAN_EVENT_MASTER);
+
+	interfaces->for_each_interface(
+		    interfaces,
+		    vlan_handle_wait_for_iface,
+		    &data);
+}
+
+static void linkmngrupdate(int fd, void *eloop_ctx, void *timeout_ctx)
+{
+	struct nl_cache_mngr *linkcachemngr = eloop_ctx;
+	if (nl_cache_mngr_data_ready(linkcachemngr) < 0) {
+		/* an error happened */
+	}
+}
+
+
+static int vlan_exists(struct hostapd_vlan *vlan, struct hostapd_data *hapd)
+{
+	struct hostapd_vlan *curr;
+
+	for (curr = hapd->conf->vlan; curr; curr = curr->next)
+		if (curr == vlan)
+			return 1;
+
+	return 0;
+}
+
+
+static void vlan_finish(struct hostapd_vlan *vlan, struct hostapd_data *hapd)
+{
+	char ifname[IFNAMSIZ];
+	int fd;
+	struct hapd_interfaces *interfaces;
+
+	os_strlcpy(ifname, vlan->ifname, sizeof(ifname));
+
+	if (eloop_cancel_timeout(vlan_newlink_cb, vlan, hapd))
+		vlan_newlink_cb(vlan, hapd);
+	if (eloop_cancel_timeout(vlan_dellink_cb, vlan, hapd))
+		vlan_dellink_cb(vlan, hapd);
+	if (!vlan_exists(vlan, hapd))
+		return;
+	
+	interfaces = hapd->iface->interfaces;
+	fd = nl_cache_mngr_get_fd(interfaces->vlan_priv->linkcachemngr);
+	vlan_finish_async(vlan, hapd);
+	while (vlan_exists(vlan, hapd))	{
+		wpa_printf(MSG_DEBUG, "vlan_finish for %s running", ifname);
+		linkmngrupdate(fd, interfaces->vlan_priv->linkcachemngr, NULL);
+		vlan_finish_async(vlan, hapd);
+	}
+
+	wpa_printf(MSG_DEBUG, "vlan_finish for %s completed", ifname);
+}
+#endif /* CONFIG_VLAN_ASYNC */
+
 int vlan_global_init(struct hapd_interfaces *interfaces)
 {
+#ifndef CONFIG_VLAN_ASYNC
 	struct netlink_config *cfg = 0;
+#endif
 
+	interfaces->vlan_priv = os_zalloc(sizeof(*interfaces->vlan_priv));
+	if (interfaces->vlan_priv == NULL)
+		goto err;
+
+#ifndef CONFIG_VLAN_ASYNC
 	full_dynamic_vlan = os_zalloc(sizeof(*full_dynamic_vlan));
 	if (full_dynamic_vlan == NULL)
 		goto err;
@@ -825,8 +484,24 @@ int vlan_global_init(struct hapd_interfaces *interfaces)
 		goto err;
 	}
 
+#else /* CONFIG_VLAN_ASYNC */
+	if (nl_cache_mngr_alloc(NULL, NETLINK_ROUTE, NL_AUTO_PROVIDE, &interfaces->vlan_priv->linkcachemngr) < 0) {
+		goto err;
+	}
+	if (nl_cache_mngr_add(interfaces->vlan_priv->linkcachemngr, "route/link", &onlinkchange, interfaces, &interfaces->vlan_priv->linkcache) < 0) {
+		goto err;
+	}
+	eloop_register_read_sock(nl_cache_mngr_get_fd(interfaces->vlan_priv->linkcachemngr), &linkmngrupdate, interfaces->vlan_priv->linkcachemngr, NULL);
+#endif /* CONFIG_VLAN_ASYNC */
+
 	return 0;
 err:
+#ifdef CONFIG_VLAN_ASYNC
+	if (interfaces->vlan_priv->linkcachemngr) {
+		eloop_unregister_read_sock(nl_cache_mngr_get_fd(interfaces->vlan_priv->linkcachemngr));
+		nl_cache_mngr_free(interfaces->vlan_priv->linkcachemngr);
+	}
+#else /* CONFIG_VLAN_ASYNC */
 	if (full_dynamic_vlan)
 	{
 		os_free(full_dynamic_vlan);
@@ -837,17 +512,35 @@ err:
 		os_free(cfg);
 		cfg = NULL;
 	}
+#endif /* CONFIG_VLAN_ASYNC */
+	if (interfaces->vlan_priv) {
+		os_free(interfaces->vlan_priv);
+		interfaces->vlan_priv = NULL;
+	}
+
 	return -1;
 }
 
 
-void vlan_global_deinit()
+void vlan_global_deinit(struct hapd_interfaces *interfaces)
 {
+#ifdef CONFIG_VLAN_ASYNC
+	if (interfaces && interfaces->vlan_priv && interfaces->vlan_priv->linkcachemngr) {
+		eloop_unregister_read_sock(nl_cache_mngr_get_fd(interfaces->vlan_priv->linkcachemngr));
+		nl_cache_mngr_free(interfaces->vlan_priv->linkcachemngr);
+	}
+#endif /* CONFIG_VLAN_ASYNC */
+	if (interfaces && interfaces->vlan_priv) {
+		os_free(interfaces->vlan_priv);
+		interfaces->vlan_priv = NULL;
+	}
+#ifndef CONFIG_VLAN_ASYNC
 	if (full_dynamic_vlan == NULL)
 		return;
 	netlink_deinit(full_dynamic_vlan->nl);
 	os_free(full_dynamic_vlan);
 	full_dynamic_vlan = NULL;
+#endif /* CONFIG_VLAN_ASYNC */
 }
 
 #endif /* CONFIG_FULL_DYNAMIC_VLAN */
@@ -881,6 +574,9 @@ static void vlan_dynamic_remove(struct hostapd_data *hapd,
 {
 	struct hostapd_vlan *next;
 
+	wpa_printf(MSG_DEBUG, "VLAN: %s: running %s",
+		   hapd->conf->iface, __func__);
+
 	while (vlan) {
 		next = vlan->next;
 
@@ -892,12 +588,19 @@ static void vlan_dynamic_remove(struct hostapd_data *hapd,
 				   vlan->ifname, strerror(errno));
 		}
 #else
-		if (vlan->vlan_id != VLAN_ID_WILDCARD)
+		if (vlan->vlan_id != VLAN_ID_WILDCARD) {
 			vlan_dellink(vlan->ifname, hapd);
+#ifdef CONFIG_VLAN_ASYNC
+			vlan_finish(vlan, hapd);
+#endif
+		}
 #endif /* CONFIG_FULL_DYNAMIC_VLAN */
 
 		vlan = next;
 	}
+
+	wpa_printf(MSG_DEBUG, "VLAN: %s: done running %s",
+		   hapd->conf->iface, __func__);
 }
 
 
@@ -905,10 +608,12 @@ int vlan_init(struct hostapd_data *hapd)
 {
 #ifdef CONFIG_FULL_DYNAMIC_VLAN
 #ifndef CONFIG_VLAN_NETLINK
+#ifndef CONFIG_VLAN_ASYNC
 	vlan_set_name_type(hapd->conf->ssid.vlan_naming ==
 			   DYNAMIC_VLAN_NAMING_WITH_DEVICE ?
 			   VLAN_NAME_TYPE_RAW_PLUS_VID_NO_PAD :
 			   VLAN_NAME_TYPE_PLUS_VID_NO_PAD);
+#endif /* CONFIG_VLAN_ASYNC */
 #endif /* CONFIG_VLAN_NETLINK */
 #endif /* CONFIG_FULL_DYNAMIC_VLAN */
 
@@ -939,7 +644,14 @@ int vlan_init(struct hostapd_data *hapd)
 
 void vlan_deinit(struct hostapd_data *hapd)
 {
+	struct hostapd_vlan *vlan;
 	vlan_dynamic_remove(hapd, hapd->conf->vlan);
+
+	vlan = hapd->conf->vlan;
+	while (vlan) {
+		wpa_printf(MSG_DEBUG, "VLAN: %s left over %s", hapd->conf->iface, vlan->ifname);
+		vlan = vlan->next;
+	}
 }
 
 
@@ -969,6 +681,7 @@ struct hostapd_vlan * vlan_add_dynamic(struct hostapd_data *hapd,
 	n->vlan_id = vlan_id;
 	n->vlan_desc = vlan_desc;
 	n->dynamic_vlan = 1;
+	n->dynamic_vlan_ref = 1;
 
 	os_snprintf(n->ifname, sizeof(n->ifname), "%s%d%s", ifname, vlan_id,
 		    pos);
@@ -978,6 +691,19 @@ struct hostapd_vlan * vlan_add_dynamic(struct hostapd_data *hapd,
 
 out:
 	return n;
+}
+
+
+void vlan_get_dynamic(struct hostapd_data *hapd, struct hostapd_vlan *vlan)
+{
+	vlan->dynamic_vlan_ref++;
+
+	wpa_printf(MSG_DEBUG, "VLAN: %s(ifname=%s vlan_id=%d) ref <- %d",
+		   __func__, hapd->conf->iface, vlan->vlan_id, vlan->dynamic_vlan_ref);
+#ifdef CONFIG_VLAN_ASYNC
+	if (vlan->removing)
+		vlan_newlink_cb(vlan, hapd);
+#endif /* CONFIG_VLAN_ASYNC */
 }
 
 
@@ -1007,8 +733,8 @@ int vlan_remove_dynamic(struct hostapd_data *hapd, int vlan_id)
 
 	vlan = hapd->conf->vlan;
 	while (vlan) {
-		if (vlan->vlan_id == vlan_id && vlan->dynamic_vlan > 0) {
-			vlan->dynamic_vlan--;
+		if (vlan->vlan_id == vlan_id && vlan->dynamic_vlan) {
+			vlan->dynamic_vlan_ref--;
 			break;
 		}
 		vlan = vlan->next;
@@ -1017,7 +743,9 @@ int vlan_remove_dynamic(struct hostapd_data *hapd, int vlan_id)
 	if (vlan == NULL)
 		return 1;
 
-	if (vlan->dynamic_vlan == 0)
+	wpa_printf(MSG_DEBUG, "VLAN: %s(ifname=%s vlan_id=%d) ref <- %d",
+		   __func__, hapd->conf->iface, vlan_id, vlan->dynamic_vlan_ref);
+	if (vlan->dynamic_vlan_ref == 0)
 		vlan_dellink(vlan->ifname, hapd);
 
 	return 0;

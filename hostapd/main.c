@@ -359,11 +359,12 @@ static int hostapd_global_init(struct hapd_interfaces *interfaces,
 }
 
 
-static void hostapd_global_deinit(const char *pid_file)
+static void hostapd_global_deinit(struct hapd_interfaces *interfaces,
+				  const char *pid_file)
 {
 	int i;
 
-	vlan_global_deinit();
+	vlan_global_deinit(interfaces);
 
 	for (i = 0; wpa_drivers[i] && global.drv_priv; i++) {
 		if (!global.drv_priv[i])
@@ -755,7 +756,7 @@ int main(int argc, char *argv[])
 	}
 	os_free(interfaces.iface);
 
-	hostapd_global_deinit(pid_file);
+	hostapd_global_deinit(&interfaces, pid_file);
 	os_free(pid_file);
 
 	if (log_file)

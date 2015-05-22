@@ -847,14 +847,12 @@ int ap_sta_set_vlan(struct hostapd_data *hapd, struct sta_info *sta,
 		}
 	} else if (vlan_desc.notempty) {
 		struct hostapd_vlan *wildcard_vlan = NULL;
-		vlan = hapd->conf->vlan;
-		while (vlan) {
+		for (vlan = hapd->conf->vlan; vlan; vlan = vlan->next) {
 			if (!os_memcmp(&vlan->vlan_desc, &vlan_desc,
 				       sizeof(vlan_desc)))
 				break;
 			if (vlan->vlan_id == VLAN_ID_WILDCARD)
 				wildcard_vlan = vlan;
-			vlan = vlan->next;
 		}
 		if (vlan)
 			vlan_id = vlan->vlan_id;
@@ -895,8 +893,8 @@ int ap_sta_set_vlan(struct hostapd_data *hapd, struct sta_info *sta,
 		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
 			       HOSTAPD_LEVEL_INFO, "added new dynamic VLAN "
 			       "interface '%s'", vlan->ifname);
-	} else if (vlan && vlan->dynamic_vlan > 0) {
-		vlan->dynamic_vlan++;
+	} else if (vlan && vlan->dynamic_vlan) {
+		vlan_get_dynamic(hapd, vlan);
 		hostapd_logger(hapd, sta->addr,
 			       HOSTAPD_MODULE_IEEE80211,
 			       HOSTAPD_LEVEL_INFO, "updated existing "
@@ -953,8 +951,8 @@ int ap_sta_bind_vlan(struct hostapd_data *hapd, struct sta_info *sta)
 			       sta->vlan_id);
 		ret = -1;
 		goto done;
-	} else if (vlan && vlan->dynamic_vlan > 0) {
-		vlan->dynamic_vlan++;
+	} else if (vlan && vlan->dynamic_vlan) {
+		vlan_get_dynamic(hapd, vlan);
 		if (vlan_setup_dynamic(hapd, vlan)) {
 			hostapd_logger(hapd, sta->addr,
 				       HOSTAPD_MODULE_IEEE80211,

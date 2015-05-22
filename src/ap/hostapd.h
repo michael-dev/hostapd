@@ -28,6 +28,7 @@ struct mesh_conf;
 #endif /* CONFIG_MESH */
 
 struct hostapd_iface;
+struct hostapd_vlan_data;
 
 struct hapd_interfaces {
 	int (*reload_config)(struct hostapd_iface *iface);
@@ -50,7 +51,7 @@ struct hapd_interfaces {
 
 	size_t terminate_on_error;
 #ifndef CONFIG_NO_VLAN
-	void *vlan_priv;
+	struct hostapd_vlan_data *vlan_priv;
 #endif
 };
 

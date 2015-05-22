@@ -112,6 +112,9 @@ struct hostapd_ssid {
 
 #define VLAN_ID_WILDCARD -1
 
+struct nl_sock;
+struct nl_cb;
+
 struct hostapd_vlan {
 	struct hostapd_vlan *next;
 	int vlan_id; /* VLAN ID or -1 (VLAN_ID_WILDCARD) for wildcard entry */
@@ -119,7 +122,8 @@ struct hostapd_vlan {
 	char ifname[IFNAMSIZ + 1];
 	int configured;
 	int setup;
-	int dynamic_vlan;
+	int dynamic_vlan:1;
+	int dynamic_vlan_ref;
 #ifdef CONFIG_RSN_PREAUTH_COPY
 	void* rsn_preauth;
 #endif /* CONFIG_RSN_PREAUTH_COPY */
@@ -128,6 +132,21 @@ struct hostapd_vlan {
 #define DVLAN_CLEAN_WLAN_PORT	0x8
 	int clean;
 #endif /* CONFIG_FULL_DYNAMIC_VLAN */
+
+#ifdef CONFIG_VLAN_ASYNC
+	int removing:1;
+	int skipStep:1;
+	int state; /* async: INIT, VLAN_ADD_TAGGED, VLAN_ADD_WIFI, BRIDGE_ADD, BRIDGE_ADD_IF, READY */
+	int substate; /* async: n-th iface */
+	int subsubstate; /* async: set iface up */
+	struct nl_sock *sk;
+	struct nl_cb *cb;
+	struct hostapd_data *hapd;
+	int waiting; /* 0: NEWLINK, 1: DELLINK, 2: IFF_UP, 3: !IFF_UP, 4: master-is-set, 5: master-is-unset */
+	char wait_for_iface[IFNAMSIZ + 1];
+	void (*wait_for_iface_cb) (struct hostapd_vlan *vlan,
+				   struct hostapd_data *hapd);
+#endif
 };
 
 #define PMK_LEN 32
