@@ -903,6 +903,8 @@ int ap_sta_set_vlan(struct hostapd_data *hapd, struct sta_info *sta,
 			       "dynamic VLAN interface '%s'", vlan->ifname);
 	}
 done:
+	hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
+		       HOSTAPD_LEVEL_DEBUG, "sta %p vlan desc %d%s => %d%s ", sta, sta->vlan_desc.untagged, (sta->vlan_desc.tagged[0] ? "+" : ""), vlan_desc.untagged, (vlan_desc.tagged[0] ? "+" : ""));
 	old_vlan_id = sta->vlan_id;
 	sta->vlan_id = vlan_id;
 	sta->vlan_desc = vlan_desc;
