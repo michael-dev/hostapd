@@ -1822,9 +1822,10 @@ static void handle_assoc(struct hostapd_data *hapd,
 		hostapd_logger(hapd, mgmt->sa, HOSTAPD_MODULE_IEEE80211,
 			       HOSTAPD_LEVEL_INFO, "Station tried to "
 			       "associate before authentication "
-			       "(aid=%d flags=0x%lx)",
+			       "(aid=%d flags=0x%lxn auth_alg=%d)",
 			       sta ? sta->aid : -1,
-			       sta ? sta->flags : 0);
+			       sta ? sta->flags : 0,
+			       sta ? sta->auth_alg : -1);
 		send_deauth(hapd, mgmt->sa,
 			    WLAN_REASON_CLASS2_FRAME_FROM_NONAUTH_STA);
 		return;
