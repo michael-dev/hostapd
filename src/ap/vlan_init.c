@@ -501,21 +501,27 @@ static int vlan_if_remove(struct hostapd_data *hapd, struct hostapd_vlan *vlan)
 }
 
 
-static void vlan_newlink(char *ifname, struct hostapd_data *hapd)
+static void vlan_newlink_real(void *eloop_ctx, void *timeout_ctx)
 {
+	struct hostapd_vlan *vlan0 = eloop_ctx;
+	struct hostapd_data *hapd = timeout_ctx;
 	char br_name[IFNAMSIZ];
 	struct hostapd_vlan *vlan;
 	int untagged, *tagged, i, notempty;
 	char *script = hapd->conf->ssid.vlan_script;
 	int ret;
-
-	wpa_printf(MSG_DEBUG, "VLAN: vlan_newlink(%s)", ifname);
+	char *ifname;
 
 	for (vlan = hapd->conf->vlan; vlan; vlan = vlan->next) {
+		if (vlan != vlan0)
+			continue;
+
 		if (vlan->configured)
 			continue;
-		if (os_strcmp(ifname, vlan->ifname))
-			continue;
+
+		ifname = vlan->ifname;
+
+		wpa_printf(MSG_DEBUG, "VLAN: vlan_newlink(%s)", ifname);
 
 		vlan->configured = 1;
 
@@ -566,6 +572,22 @@ static void vlan_newlink(char *ifname, struct hostapd_data *hapd)
 			vlan->rsn_preauth = rsn_preauth_snoop_init(hapd, vlan->ifname);
 #endif /* CONFIG_RSN_PREAUTH_COPY */
 
+		break;
+	}
+}
+
+static void vlan_newlink(char *ifname, struct hostapd_data *hapd)
+{
+	struct hostapd_vlan *vlan;
+
+	for (vlan = hapd->conf->vlan; vlan; vlan = vlan->next) {
+		if (vlan->configured)
+			continue;
+		if (os_strcmp(ifname, vlan->ifname))
+			continue;
+		eloop_cancel_timeout(vlan_newlink_real, vlan, hapd);
+		eloop_register_timeout(1, 0,
+				       vlan_newlink_real, vlan, hapd);
 		break;
 	}
 }
@@ -647,6 +669,8 @@ static void vlan_dellink(char *ifname, struct hostapd_data *hapd)
 
 		if (!vlan->configured)
 			goto skip_counting;
+
+		eloop_cancel_timeout(vlan_newlink_real, vlan, hapd);
 
 #ifdef CONFIG_RSN_PREAUTH_COPY
 		rsn_preauth_snoop_deinit(hapd, vlan->ifname,
