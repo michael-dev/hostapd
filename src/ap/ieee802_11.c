@@ -920,8 +920,12 @@ int handle_auth_cfg_sta(struct hostapd_data *hapd, struct sta_info *sta,
 		sta->psk = NULL;
 	}
 
+	if (sta->identity)
+		os_free(sta->identity);
 	sta->identity = info->identity;
 	info->identity = NULL;
+	if (sta->radius_cui)
+		os_free(sta->radius_cui);
 	sta->radius_cui = info->radius_cui;
 	info->radius_cui = NULL;
 
