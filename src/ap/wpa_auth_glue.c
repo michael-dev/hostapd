@@ -740,6 +740,23 @@ hostapd_wpa_auth_get_vlan(void *ctx, const u8 *sta_addr,
 }
 
 
+static int
+hostapd_wpa_auth_get_session_timeout(void *ctx, const u8 *sta_addr)
+{
+	struct hostapd_data *hapd = ctx;
+	struct sta_info *sta;
+
+	sta = ap_get_sta(hapd, sta_addr);
+	if (sta == NULL)
+		return 0;
+
+	if (!sta->session_timeout_set)
+		return 0;
+
+	return sta->session_timeout;
+}
+
+
 static char*
 hostapd_wpa_auth_get_identity(void *ctx, const u8 *sta_addr)
 {
@@ -776,6 +793,26 @@ hostapd_wpa_auth_get_radius_cui(void *ctx, const u8 *sta_addr)
 		return (char*) wpabuf_head(buf);
 
 	return sta->radius_cui;
+}
+
+
+static void
+hostapd_wpa_auth_set_session_timeout(void *ctx, const u8 *sta_addr, int session_timeout)
+{
+	struct hostapd_data *hapd = ctx;
+	struct sta_info *sta;
+
+	sta = ap_get_sta(hapd, sta_addr);
+	if (sta == NULL)
+		return;
+
+	sta->session_timeout = session_timeout;
+	sta->session_timeout_set = !!session_timeout;
+
+	if (sta->session_timeout_set)
+		ap_sta_session_timeout(hapd, sta, sta->session_timeout);
+	else
+		ap_sta_no_session_timeout(hapd, sta);
 }
 
 
@@ -899,8 +936,10 @@ int hostapd_setup_wpa(struct hostapd_data *hapd)
 	cb.add_sta = hostapd_wpa_auth_add_sta_auth;
 	cb.set_vlan = hostapd_wpa_auth_set_vlan;
 	cb.get_vlan = hostapd_wpa_auth_get_vlan;
+	cb.get_session_timeout = hostapd_wpa_auth_get_session_timeout;
 	cb.get_identity = hostapd_wpa_auth_get_identity;
 	cb.get_radius_cui = hostapd_wpa_auth_get_radius_cui;
+	cb.set_session_timeout = hostapd_wpa_auth_set_session_timeout;
 	cb.set_identity = hostapd_wpa_auth_set_identity;
 	cb.set_radius_cui = hostapd_wpa_auth_set_radius_cui;
 	cb.add_tspec = hostapd_wpa_auth_add_tspec;
