@@ -918,6 +918,31 @@ hostapd_wpa_auth_get_vlan(void *ctx, const u8 *sta_addr,
 }
 
 
+static int
+hostapd_wpa_auth_get_session_timeout(void *ctx, const u8 *sta_addr)
+{
+	struct hostapd_data *hapd = ctx;
+	struct sta_info *sta;
+	struct os_reltime now, remaining;
+
+	sta = ap_get_sta(hapd, sta_addr);
+	if (sta == NULL)
+		return 0;
+
+	if (!sta->session_timeout_set)
+		return 0;
+
+	os_get_reltime(&now);
+	if (os_reltime_before(&sta->session_timeout, &now))
+		/* already expired, return >0 as timeout was set */
+		return 1;
+
+	os_reltime_sub(&sta->session_timeout, &now, &remaining);
+
+	return (remaining.sec > 0) ? remaining.sec : 1;
+}
+
+
 static size_t
 hostapd_wpa_auth_get_identity(void *ctx, const u8 *sta_addr, const u8 **buf)
 {
@@ -979,6 +1004,28 @@ hostapd_wpa_auth_get_radius_cui(void *ctx, const u8 *sta_addr, const u8 **buf)
 	*buf = (u8 *) radius_cui;
 
 	return len;
+}
+
+
+static void
+hostapd_wpa_auth_set_session_timeout(void *ctx, const u8 *sta_addr,
+				      int session_timeout)
+{
+	struct hostapd_data *hapd = ctx;
+	struct sta_info *sta;
+
+	sta = ap_get_sta(hapd, sta_addr);
+	if (sta == NULL)
+		return;
+
+	os_get_reltime(&sta->session_timeout);
+	sta->session_timeout.sec += session_timeout;
+	sta->session_timeout_set = !!session_timeout;
+
+	if (sta->session_timeout_set)
+		ap_sta_session_timeout(hapd, sta, session_timeout);
+	else
+		ap_sta_no_session_timeout(hapd, sta);
 }
 
 
@@ -1183,6 +1230,8 @@ int hostapd_setup_wpa(struct hostapd_data *hapd)
 		.get_radius_cui = hostapd_wpa_auth_get_radius_cui,
 		.set_identity = hostapd_wpa_auth_set_identity,
 		.set_radius_cui = hostapd_wpa_auth_set_radius_cui,
+		.get_session_timeout = hostapd_wpa_auth_get_session_timeout,
+		.set_session_timeout = hostapd_wpa_auth_set_session_timeout,
 #endif /* CONFIG_IEEE80211R_AP */
 	};
 	const u8 *wpa_ie;
