@@ -757,42 +757,72 @@ hostapd_wpa_auth_get_session_timeout(void *ctx, const u8 *sta_addr)
 }
 
 
-static char*
-hostapd_wpa_auth_get_identity(void *ctx, const u8 *sta_addr)
+static size_t
+hostapd_wpa_auth_get_identity(void *ctx, const u8 *sta_addr, u8 *buf, size_t buflen)
 {
 	struct hostapd_data *hapd = ctx;
 	struct sta_info *sta;
 	size_t len;
-	u8 *buf;
+	u8 *b;
 
 	sta = ap_get_sta(hapd, sta_addr);
 	if (sta == NULL)
-		return NULL;
+		return 0;
 
-	buf = ieee802_1x_get_identity(sta->eapol_sm, &len);
-	if (buf && len)
-		return (char*) buf;
+	b = ieee802_1x_get_identity(sta->eapol_sm, &len);
+	if (b && len) {
+		if (len >= buflen)
+			len = buflen - 1;
+		os_memcpy(buf, b, len);
+		buf[len] = 0;
+		return len;
+	}
 
-	return sta->identity;
+	if (!sta->identity)
+		return 0;
+
+	len = os_strlen(sta->identity);
+	if (len >= buflen)
+		len = buflen - 1;
+	os_memcpy(buf, sta->identity, len);
+	buf[len] = 0;
+	
+	return len;
 }
 
 
-static char*
-hostapd_wpa_auth_get_radius_cui(void *ctx, const u8 *sta_addr)
+static size_t
+hostapd_wpa_auth_get_radius_cui(void *ctx, const u8 *sta_addr, u8 *buf, size_t buflen)
 {
 	struct hostapd_data *hapd = ctx;
 	struct sta_info *sta;
-	struct wpabuf *buf;
+	struct wpabuf *b;
+	size_t len;
 
 	sta = ap_get_sta(hapd, sta_addr);
 	if (sta == NULL)
-		return NULL;
+		return 0;
 
-	buf = ieee802_1x_get_radius_cui(sta->eapol_sm);
-	if (buf)
-		return (char*) wpabuf_head(buf);
+	b = ieee802_1x_get_radius_cui(sta->eapol_sm);
+	if (b) {
+		len = wpabuf_len(b);
+		if (len >= buflen)
+			len = buflen - 1;
+		os_memcpy(buf, wpabuf_head(b), len);
+		buf[len] = 0;
+		return len;
+	}
 
-	return sta->radius_cui;
+	if (!sta->radius_cui)
+		return 0;
+
+	len = os_strlen(sta->radius_cui);
+	if (len >= buflen)
+		len = buflen - 1;
+	os_memcpy(buf, sta->radius_cui, len);
+	buf[len] = 0;
+	
+	return len;
 }
 
 
@@ -817,7 +847,7 @@ hostapd_wpa_auth_set_session_timeout(void *ctx, const u8 *sta_addr, int session_
 
 
 static void
-hostapd_wpa_auth_set_identity(void *ctx, const u8 *sta_addr, char *identity)
+hostapd_wpa_auth_set_identity(void *ctx, const u8 *sta_addr, u8 *identity, size_t identity_len)
 {
 	struct hostapd_data *hapd = ctx;
 	struct sta_info *sta;
@@ -826,25 +856,37 @@ hostapd_wpa_auth_set_identity(void *ctx, const u8 *sta_addr, char *identity)
 	if (sta == NULL)
 		return;
 
-	if (sta->identity)
+	if (sta->identity) {
 		os_free(sta->identity);
+		sta->identity = NULL;
+	}
 
 	if (sta->eapol_sm && sta->eapol_sm->identity) {
 		os_free(sta->eapol_sm->identity);
 		sta->eapol_sm->identity_len = 0;
 	}
 
-	sta->identity = os_strdup(identity);
+	if (!identity_len)
+		return;
+
+	/* sta->identity is NULL terminated */
+	sta->identity = os_zalloc(identity_len + 1);
+	if (sta->identity) {
+		os_memcpy(sta->identity, identity, identity_len);
+	}
+
 	if (sta->eapol_sm) {
-		sta->eapol_sm->identity = (u8 *) os_strdup(identity);
-		if (sta->eapol_sm->identity)
-			sta->eapol_sm->identity_len = os_strlen(identity);
+		sta->eapol_sm->identity = os_zalloc(identity_len);
+		if (sta->eapol_sm->identity) {
+			os_memcpy(sta->eapol_sm->identity, identity, identity_len);
+			sta->eapol_sm->identity_len = identity_len;
+		}
 	}
 }
 
 
 static void
-hostapd_wpa_auth_set_radius_cui(void *ctx, const u8 *sta_addr, char *radius_cui)
+hostapd_wpa_auth_set_radius_cui(void *ctx, const u8 *sta_addr, u8 *radius_cui, size_t radius_cui_len)
 {
 	struct hostapd_data *hapd = ctx;
 	struct sta_info *sta;
@@ -853,19 +895,27 @@ hostapd_wpa_auth_set_radius_cui(void *ctx, const u8 *sta_addr, char *radius_cui)
 	if (sta == NULL)
 		return;
 
-	if (sta->radius_cui)
+	if (sta->radius_cui) {
 		os_free(sta->radius_cui);
+		sta->radius_cui = NULL;
+	}
 
 	if (sta->eapol_sm && sta->eapol_sm->radius_cui) {
 		wpabuf_free(sta->eapol_sm->radius_cui);
 		sta->eapol_sm->radius_cui = NULL;
 	}
 
-	sta->radius_cui = os_strdup(radius_cui);
-	if (sta->eapol_sm) {
+	if (!radius_cui)
+		return;
+
+	/* sta->radius_cui is NULL terminated */
+	sta->radius_cui = os_zalloc(radius_cui_len + 1);
+	if (sta->radius_cui)
+		os_memcpy(sta->radius_cui, radius_cui, radius_cui_len);
+
+	if (sta->eapol_sm)
 		sta->eapol_sm->radius_cui = wpabuf_alloc_copy(radius_cui,
-							      os_strlen(radius_cui));
-	}
+							      radius_cui_len);
 }
 
 

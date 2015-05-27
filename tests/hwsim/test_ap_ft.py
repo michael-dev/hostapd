@@ -572,12 +572,15 @@ def test_ap_ft_sae_over_ds(dev, apdev):
     run_roams(dev[0], apdev, hapd0, hapd1, ssid, passphrase, sae=True,
               over_ds=True)
 
-def generic_ap_ft_eap(dev, apdev, vlan, over_ds=False, discovery=False, roams=1):
+def generic_ap_ft_eap(dev, apdev, vlan, cui=False, over_ds=False, discovery=False, roams=1):
     ssid = "test-ft"
     passphrase="12345678"
     if vlan:
         identity="gpsk-vlan1"
         conndev="brvlan1"
+    elif cui:
+        identity="gpsk-cui"
+        conndev=False
     else:
         identity="gpsk user"
         conndev=False
@@ -610,6 +613,10 @@ def generic_ap_ft_eap(dev, apdev, vlan, over_ds=False, discovery=False, roams=1)
 def test_ap_ft_eap(dev, apdev):
     """WPA2-EAP-FT AP"""
     generic_ap_ft_eap(dev, apdev, vlan=False)
+
+def test_ap_ft_eap_cui(dev, apdev):
+    """WPA2-EAP-FT AP with cui"""
+    generic_ap_ft_eap(dev, apdev, vlan=False, cui=True)
 
 def test_ap_ft_eap_vlan(dev, apdev):
     """WPA2-EAP-FT AP w VLAN"""
