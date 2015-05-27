@@ -82,6 +82,7 @@ struct ft_rrb_frame {
 
 #define FT_RRB_IDENTITY      15
 #define FT_RRB_RADIUS_CUI    16
+#define FT_RRB_SESSION_TIMEOUT  17 /* le32 seconds */
 
 struct ft_rrb_tlv {
 	le16 type;
@@ -96,7 +97,7 @@ struct ft_rrb_seq {
 
 /* session TLVs:
  *   required: PMK_R1, PMK_R1_NAME, PAIRWISE
- *   optional: VLAN, EXPIRES_IN, IDENTITY, RADIUS_CUI
+ *   optional: VLAN, EXPIRES_IN, IDENTITY, RADIUS_CUI, SESSION_TIMEOUT
  *
  * pull frame TLVs:
  *   auth:
@@ -288,10 +289,13 @@ struct wpa_auth_callbacks {
 			struct vlan_description *vlan);
 	size_t (*get_identity)(void *ctx, const u8 *sta_addr, const u8 **buf);
 	size_t (*get_radius_cui)(void *ctx, const u8 *sta_addr, const u8 **buf);
+	int (*get_session_timeout)(void *ctx, const u8 *sta_addr);
 	void (*set_identity)(void *ctx, const u8 *sta_addr,
 			     const u8 *identity, size_t identity_len);
 	void (*set_radius_cui)(void *ctx, const u8 *sta_addr,
 			       const u8 *radius_cui, size_t radius_cui_len);
+	void (*set_session_timeout)(void *ctx, const u8 *sta_addr,
+				    int session_timeout);
 
 	int (*send_ft_action)(void *ctx, const u8 *dst,
 			      const u8 *data, size_t data_len);
