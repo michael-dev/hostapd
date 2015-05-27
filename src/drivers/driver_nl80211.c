@@ -3964,7 +3964,10 @@ void nl80211_remove_iface(struct wpa_driver_nl80211_data *drv, int ifidx)
 	/* stop listening for EAPOL on this interface */
 	dl_list_for_each(drv2, &drv->global->interfaces,
 			 struct wpa_driver_nl80211_data, list)
+	{
 		del_ifidx(drv2, ifidx, -1);
+		del_ifidx(drv2, -1, ifidx); /* all bridges learned for this if */
+	}
 
 	msg = nl80211_ifindex_msg(drv, ifidx, 0, NL80211_CMD_DEL_INTERFACE);
 	if (send_and_recv_msgs(drv, msg, NULL, NULL) == 0)
@@ -5592,7 +5595,7 @@ static void del_ifidx(struct wpa_driver_nl80211_data *drv, int ifidx, int ifidx_
 	int i;
 
 	for (i = 0; i < drv->num_if_indices; i++) {
-		if (drv->if_indices[i] == ifidx &&
+		if ((drv->if_indices[i] == ifidx || ifidx == -1) &&
 		    (drv->if_indices_reason[i] == ifidx_reason || ifidx_reason == -1)) {
 			drv->if_indices[i] = 0;
 			break;
@@ -6096,7 +6099,10 @@ static int wpa_driver_nl80211_if_remove(struct i802_bss *bss,
 		struct wpa_driver_nl80211_data *drv2;
 		dl_list_for_each(drv2, &drv->global->interfaces,
 				 struct wpa_driver_nl80211_data, list)
+		{
 			del_ifidx(drv2, ifindex, -1);
+			del_ifidx(drv2, -1, ifindex);
+		}
 	}
 
 	if (type != WPA_IF_AP_BSS)
