@@ -568,6 +568,7 @@ static int wpa_ft_pull_pmk_r1(struct wpa_state_machine *sm,
 	struct ft_remote_r0kh *r0kh, *r0kh_wildcard = NULL;
 	struct ft_r0kh_r1kh_pull_frame frame, f;
 	int tsecs, tusecs, first;
+	struct wpabuf *ft_pending_req_ies;
 
 	if (sm->ft_pending_pull_left_retries <= 0)
 		return -1;
@@ -636,8 +637,9 @@ static int wpa_ft_pull_pmk_r1(struct wpa_state_machine *sm,
 		     f.nonce, frame.nonce) < 0)
 		return -1;
 
+	ft_pending_req_ies = wpabuf_alloc_copy(ies, ies_len);
 	wpabuf_free(sm->ft_pending_req_ies);
-	sm->ft_pending_req_ies = wpabuf_alloc_copy(ies, ies_len);
+	sm->ft_pending_req_ies = ft_pending_req_ies;
 	if (sm->ft_pending_req_ies == NULL)
 		return -1;
 
