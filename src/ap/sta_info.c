@@ -523,6 +523,8 @@ static void ap_handle_session_timer(void *eloop_ctx, void *timeout_ctx)
 	struct hostapd_data *hapd = eloop_ctx;
 	struct sta_info *sta = timeout_ctx;
 
+	sta->flags &= ~WLAN_STA_PREAUTH_FT_OVER_DS;
+
 	if (!(sta->flags & WLAN_STA_AUTH)) {
 		if (sta->flags & WLAN_STA_GAS) {
 			wpa_printf(MSG_DEBUG, "GAS: Remove temporary STA "
