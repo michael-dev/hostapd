@@ -1502,10 +1502,15 @@ ieee802_11_set_radius_info(struct hostapd_data *hapd, struct sta_info *sta,
 
 	if (hapd->conf->acct_interim_interval == 0 && acct_interim_interval)
 		sta->acct_interim_interval = acct_interim_interval;
-	if (res == HOSTAPD_ACL_ACCEPT_TIMEOUT)
+	if (res == HOSTAPD_ACL_ACCEPT_TIMEOUT) {
+		sta->session_timeout_set = 1;
+		os_get_reltime(&sta->session_timeout);
+		sta->session_timeout.sec += session_timeout;
 		ap_sta_session_timeout(hapd, sta, session_timeout);
-	else
+	} else {
+		sta->session_timeout_set = 0;
 		ap_sta_no_session_timeout(hapd, sta);
+	}
 
 	return 0;
 }
