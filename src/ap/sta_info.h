@@ -178,7 +178,8 @@ struct sta_info {
 	struct sae_data *sae;
 #endif /* CONFIG_SAE */
 
-	u32 session_timeout; /* valid only if session_timeout_set == 1 */
+	/* valid only if session_timeout_set == 1 */
+	struct os_reltime session_timeout;
 
 	/* Last Authentication/(Re)Association Request/Action frame sequence
 	 * control */

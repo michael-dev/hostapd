@@ -82,7 +82,7 @@ struct ft_r0kh_r1kh_pull_frame {
 				    FT_R1KH_ID_LEN + ETH_ALEN + PMK_LEN + \
 				    WPA_PMK_NAME_LEN + 2 + 2 + \
 				    FT_VLAN_DATA_LEN + 1 + FT_IDENTITY_LEN + \
-				    1 + FT_RADIUS_CUI_LEN)
+				    1 + FT_RADIUS_CUI_LEN + 4)
 #define FT_R0KH_R1KH_RESP_PAD_LEN (8 - FT_R0KH_R1KH_RESP_DATA_LEN % 8)
 struct ft_r0kh_r1kh_resp_frame {
 	u8 frame_type; /* RSN_REMOTE_FRAME_TYPE_FT_RRB */
@@ -102,6 +102,7 @@ struct ft_r0kh_r1kh_resp_frame {
 	u8 identity[FT_IDENTITY_LEN];
 	u8 radius_cui_len;
 	u8 radius_cui[FT_RADIUS_CUI_LEN];
+	le32 session_timeout;
 	u8 pad[FT_R0KH_R1KH_RESP_PAD_LEN]; /* 8-octet boundary for AES block */
 	u8 key_wrap_extra[8];
 } STRUCT_PACKED;
@@ -110,7 +111,7 @@ struct ft_r0kh_r1kh_resp_frame {
 				    WPA_PMK_NAME_LEN + PMK_LEN + \
 				    WPA_PMK_NAME_LEN + 2 + 2 + \
 				    FT_VLAN_DATA_LEN + 1 + FT_IDENTITY_LEN + \
-				    1 + FT_RADIUS_CUI_LEN)
+				    1 + FT_RADIUS_CUI_LEN + 4)
 #define FT_R0KH_R1KH_PUSH_PAD_LEN (8 - FT_R0KH_R1KH_PUSH_DATA_LEN % 8)
 struct ft_r0kh_r1kh_push_frame {
 	u8 frame_type; /* RSN_REMOTE_FRAME_TYPE_FT_RRB */
@@ -133,6 +134,7 @@ struct ft_r0kh_r1kh_push_frame {
 	u8 identity[FT_IDENTITY_LEN];
 	u8 radius_cui_len;
 	u8 radius_cui[FT_RADIUS_CUI_LEN];
+	le32 session_timeout;
 	u8 pad[FT_R0KH_R1KH_PUSH_PAD_LEN]; /* 8-octet boundary for AES block */
 	u8 key_wrap_extra[8];
 } STRUCT_PACKED;
@@ -270,10 +272,13 @@ struct wpa_auth_callbacks {
 			       size_t buflen);
 	size_t (*get_radius_cui)(void *ctx, const u8 *sta_addr, u8 *buf,
 				 size_t buflen);
+	int (*get_session_timeout)(void *ctx, const u8 *sta_addr);
 	void (*set_identity)(void *ctx, const u8 *sta_addr, u8 *identity,
 			     size_t identity_len);
 	void (*set_radius_cui)(void *ctx, const u8 *sta_addr, u8 *radius_cui,
 			       size_t radius_cui_len);
+	void (*set_session_timeout)(void *ctx, const u8 *sta_addr,
+				    int session_timeout);
 
 	int (*send_ft_action)(void *ctx, const u8 *dst,
 			      const u8 *data, size_t data_len);
