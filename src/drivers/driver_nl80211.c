@@ -5677,12 +5677,9 @@ static void handle_eapol(int sock, void *eloop_ctx, void *sock_ctx)
 	}
 	os_memset(namebuf, 0, sizeof(namebuf));
 	if_indextoname(lladdr.sll_ifindex, namebuf);
-	wpa_printf(MSG_ERROR, "nl80211: EAPOL recv on %s (%d)", namebuf, lladdr.sll_ifindex);
 
 	if (have_ifidx(drv, lladdr.sll_ifindex, -1))
 		drv_event_eapol_rx(drv->ctx, lladdr.sll_addr, buf, len);
-	else
-		wpa_printf(MSG_ERROR, "nl80211: EAPOL recv ignored on %s (%d)", namebuf, lladdr.sll_ifindex);
 }
 
 
