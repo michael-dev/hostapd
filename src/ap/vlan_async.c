@@ -206,7 +206,13 @@ static int state_create_iface(struct hostapd_vlan *vlan,
 	if (link) {
 		wpa_printf(MSG_DEBUG, "VLAN: %s %s already exists",
 			   vlan->ifname, if_name);
-		dyn_iface_get(if_name, "", 0, hapd);
+		if (vlan->subsubstate)
+			/* deconfigure has set this interface down in an attempt to remove it after dyn_iface_put.
+			 * thus it is present and owned by us without being ref-counted now.
+			 */
+			dyn_iface_get(if_name, "", flags, hapd);
+		else
+			dyn_iface_get(if_name, "", 0, hapd);
 		ret = state_set_iface_up(vlan, hapd, link);
 		goto out;
 	}
@@ -794,9 +800,10 @@ void vlan_configure_run(struct hostapd_vlan *vlan, struct hostapd_data *hapd)
 {
 	int arg;
 
-	if (!vlan->skipStep)
+	if (!vlan->skipStep) {
 		vlan->substate++;
-	else
+		vlan->subsubstate = 0;
+	} else
 		vlan->skipStep = 0;
 
 	wpa_printf(MSG_DEBUG, "VLAN: %s configure entering state %d.%d", vlan->ifname, vlan->state, vlan->substate);
@@ -861,8 +868,10 @@ void vlan_deconfigure_run(struct hostapd_vlan *vlan, struct hostapd_data *hapd)
 	if (!vlan->skipStep) {
 		if (vlan->state == 1 || vlan->state == 2 || vlan->state == 3)
 			vlan->subsubstate++;
-		else
+		else {
 			vlan->substate--;
+			vlan->subsubstate = 0;
+		}
 	} else
 		vlan->skipStep = 0;
 
@@ -952,9 +961,9 @@ void vlan_deconfigure_run(struct hostapd_vlan *vlan, struct hostapd_data *hapd)
 			break;
 		}
 		if (!curr) {
-			wpa_printf(MSG_ERROR, "VLAN: %s ptr %p not found", vlan->ifname, vlan);
+			wpa_printf(MSG_DEBUG, "VLAN: %s ptr %p not found", vlan->ifname, vlan);
 		} else {
-			wpa_printf(MSG_ERROR, "VLAN: %s ptr %p freed", vlan->ifname, vlan);
+			wpa_printf(MSG_DEBUG, "VLAN: %s ptr %p freed", vlan->ifname, vlan);
 		}
 
 		break;
@@ -969,6 +978,7 @@ static void wait_for_iface_cb(void *eloop_ctx, void *timeout_ctx)
 	struct hostapd_data *hapd = timeout_ctx;
 
 	vlan->wait_for_iface[0] = '\0';
+	eloop_cancel_timeout(&wait_for_iface_cb, vlan, hapd);
 	if (vlan->removing) {
 		vlan_deconfigure_run(vlan, hapd);
 	} else {
@@ -980,7 +990,6 @@ static void wait_for_iface_cb(void *eloop_ctx, void *timeout_ctx)
 static void wait_for_iface(struct hostapd_vlan *vlan, struct hostapd_data *hapd)
 {
 	/* defer processing since cache needs to finish its newlink processing first so iface shows up in cache */
-	eloop_cancel_timeout(&wait_for_iface_cb, vlan, hapd);
 	eloop_register_timeout(0, 0, &wait_for_iface_cb, vlan, hapd);
 }
 
@@ -1052,10 +1061,15 @@ void vlan_configure(struct hostapd_vlan *vlan, struct hostapd_data *hapd)
 {
 	char *tagged_interface = hapd->conf->ssid.vlan_tagged_interface;
 
-	vlan->skipStep = 1;
-	if (vlan->removing)
+	if (vlan->removing) {
 		vlan->removing = 0;
-	else {
+		if (vlan->skipStep)
+			/* deconfigure did not run a step yet */
+			vlan->skipStep = 0;
+		else
+			vlan->skipStep = 1;
+	} else {
+		vlan->skipStep = 1;
 		vlan_configure_setup(vlan, hapd);
 		if (tagged_interface)
 			ifconfig_up(tagged_interface);
@@ -1068,13 +1082,15 @@ void vlan_configure(struct hostapd_vlan *vlan, struct hostapd_data *hapd)
 void vlan_deconfigure(struct hostapd_vlan *vlan, struct hostapd_data *hapd)
 {
 	vlan->removing = 1;
-	vlan->skipStep = 1;
-	vlan->subsubstate = 0;
+	if (vlan->skipStep)
+		/* configure interrupted a running deconfigure but has not been run yet */
+		vlan->skipStep = 0;
+	else
+		vlan->skipStep = 1;
 	vlan_configure_setup(vlan, hapd);
 
 	if (vlan->wait_for_iface[0]) {
 		/* wait_for_iface was left in place so deconfigure starts after cache learned this recently created one */
-		eloop_cancel_timeout(&wait_for_iface_cb, vlan, hapd);
 		eloop_register_timeout(1, 0, &wait_for_iface_cb, vlan, hapd);
 	} else {
 		vlan_deconfigure_run(vlan, hapd);
