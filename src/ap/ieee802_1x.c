@@ -1308,6 +1308,7 @@ void ieee802_1x_new_station(struct hostapd_data *hapd, struct sta_info *sta)
 		if (sta->eapol_sm->eap)
 			eap_sm_notify_cached(sta->eapol_sm->eap);
 		ap_sta_bind_vlan(hapd, sta);
+		ieee802_1x_set_sta_authorized(hapd, sta, 1);
 		return;
 	}
 #endif /* CONFIG_IEEE80211R_AP */
@@ -1352,6 +1353,7 @@ void ieee802_1x_new_station(struct hostapd_data *hapd, struct sta_info *sta)
 			eap_sm_notify_cached(sta->eapol_sm->eap);
 		pmksa_cache_to_eapol_data(hapd, pmksa, sta->eapol_sm);
 		ap_sta_bind_vlan(hapd, sta);
+		ieee802_1x_set_sta_authorized(hapd, sta, 1);
 	} else {
 		if (reassoc) {
 			/*
