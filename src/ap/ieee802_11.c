@@ -1821,6 +1821,16 @@ static void handle_assoc(struct hostapd_data *hapd,
 			   "prior to authentication since it is using "
 			   "over-the-DS FT", MAC2STR(mgmt->sa));
 	} else
+	if (sta && sta->auth_alg == WLAN_AUTH_FT &&
+	    (sta->flags & WLAN_STA_AUTH) == 0 &&
+	    (sta->flags & WLAN_STA_PREAUTH_FT_OVER_DS) == 0 &&
+	    (sta->flags & WLAN_STA_ASSOC)) {
+		hostapd_logger(hapd, mgmt->sa, HOSTAPD_MODULE_IEEE80211,
+			       HOSTAPD_LEVEL_DEBUG,
+			   "FT: Already associated STA " MACSTR " try to connect without authenticated and with OVER_DS cleared but using FT. Ignore as it might be a retry.",
+			   MAC2STR(mgmt->sa));
+		return;
+	} else
 #endif /* CONFIG_IEEE80211R */
 	if (sta == NULL || (sta->flags & WLAN_STA_AUTH) == 0) {
 		hostapd_logger(hapd, mgmt->sa, HOSTAPD_MODULE_IEEE80211,
