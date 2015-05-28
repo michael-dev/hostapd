@@ -6497,7 +6497,7 @@ static void handle_assoc_cb(struct hostapd_data *hapd,
 		 * Open, static WEP, FT protocol, or FILS; no separate
 		 * authorization step.
 		 */
-		ap_sta_set_authorized(hapd, sta, 1);
+		ieee802_1x_set_sta_authorized(hapd, sta, 1);
 	}
 
 	if (reassoc)
