@@ -2766,6 +2766,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->ssid.dynamic_vlan = atoi(pos);
 	} else if (os_strcmp(buf, "per_sta_vif") == 0) {
 		bss->ssid.per_sta_vif = atoi(pos);
+	} else if (os_strcmp(buf, "always_vlan_if") == 0) {
+		bss->ssid.always_vlan_if = atoi(pos);
 	} else if (os_strcmp(buf, "vlan_file") == 0) {
 		if (hostapd_config_read_vlan_file(bss, pos)) {
 			wpa_printf(MSG_ERROR, "Line %d: failed to read VLAN file '%s'",

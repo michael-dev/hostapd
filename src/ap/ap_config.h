@@ -103,6 +103,7 @@ struct hostapd_ssid {
 #define DYNAMIC_VLAN_NAMING_END 2
 	int vlan_naming;
 	int per_sta_vif;
+	int always_vlan_if;
 #ifdef CONFIG_FULL_DYNAMIC_VLAN
 	char *vlan_tagged_interface;
 	char *vlan_script;
