@@ -852,7 +852,8 @@ int ap_sta_set_vlan(struct hostapd_data *hapd, struct sta_info *sta,
 	} else if (vlan_desc.notempty || hapd->conf->ssid.always_vlan_if) {
 		struct hostapd_vlan *wildcard_vlan = NULL;
 		for (vlan = hapd->conf->vlan; vlan; vlan = vlan->next) {
-			if (!os_memcmp(&vlan->vlan_desc, &vlan_desc,
+			if (vlan->vlan_id != VLAN_ID_WILDCARD &&
+			    !os_memcmp(&vlan->vlan_desc, &vlan_desc,
 				       sizeof(vlan_desc)))
 				break;
 			if (vlan->vlan_id == VLAN_ID_WILDCARD)
