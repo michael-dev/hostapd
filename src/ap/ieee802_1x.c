@@ -1708,8 +1708,8 @@ ieee802_1x_receive_auth(struct radius_msg *msg, struct radius_msg *req,
 #endif /* CONFIG_NO_VLAN */
 
 
-		if ((sta->flags & WLAN_STA_ASSOC) &&
-		    ap_sta_bind_vlan(hapd, sta) < 0)
+		if ((ap_sta_bind_vlan(hapd, sta) < 0) &&
+		    (sta->flags & WLAN_STA_ASSOC))
 			break;
 
 		sta->session_timeout_set = !!session_timeout_set;
