@@ -1991,8 +1991,8 @@ ieee802_1x_receive_auth(struct radius_msg *msg, struct radius_msg *req,
 				       "VLAN ID %d", sta->vlan_id);
 		}
 
-		if ((sta->flags & WLAN_STA_ASSOC) &&
-		    ap_sta_bind_vlan(hapd, sta) < 0)
+		if ((ap_sta_bind_vlan(hapd, sta) < 0) &&
+		    (sta->flags & WLAN_STA_ASSOC))
 			break;
 #endif /* CONFIG_NO_VLAN */
 
