@@ -428,6 +428,9 @@ static int driver_wiredng_set_sta_vlan(void *priv, const u8 *addr,
 	struct wpa_driver_wiredng_sta *newsta;
 	int i;
 
+	wpa_printf(MSG_DEBUG, "wiredng: %s: %s(ifname=%s, mac=" MACSTR ", vlan_id=%d)",
+		   drv->ifname, __func__, ifname, MAC2STR(addr), vlan_id);
+
 	for (i = 0; i < drv->numVlanInterfaces; i++) {
 		macvlan_interface_change_mac(drv->vlanInterfaceIdx[i], 0, addr);
 	}
