@@ -864,8 +864,8 @@ int ap_sta_set_vlan(struct hostapd_data *hapd, struct sta_info *sta,
 		else if (wildcard_vlan) {
 			vlan = wildcard_vlan;
 			vlan_id = vlan_desc.untagged;
-			if (vlan_desc.tagged[0])
-				/* tagged vlan configuration */
+			if (vlan_desc.tagged[0] || !vlan_desc.notempty)
+				/* tagged vlan or always_vlan_if */
 				vlan_id = ap_sta_get_free_vlan_id(hapd);
 		} else {
 			hostapd_logger(hapd, sta->addr,
