@@ -817,6 +817,7 @@ int wpa_auth_derive_ptk_ft(struct wpa_state_machine *sm, const u8 *pmk,
 	const u8 *r1kh = sm->wpa_auth->conf.r1_key_holder;
 	const u8 *ssid = sm->wpa_auth->conf.ssid;
 	size_t ssid_len = sm->wpa_auth->conf.ssid_len;
+	int psk_local = sm->wpa_auth->conf.ft_psk_generate_local;
 	os_time_t expiresIn = sm->wpa_auth->conf.r0_key_lifetime * 60;
 	struct ft_vlan vlan;
 	u8 identity[FT_IDENTITY_LEN], radius_cui[FT_RADIUS_CUI_LEN];
@@ -841,7 +842,7 @@ int wpa_auth_derive_ptk_ft(struct wpa_state_machine *sm, const u8 *pmk,
 			  r0kh, r0kh_len, sm->addr, pmk_r0, pmk_r0_name);
 	wpa_hexdump_key(MSG_DEBUG, "FT: PMK-R0", pmk_r0, PMK_LEN);
 	wpa_hexdump(MSG_DEBUG, "FT: PMKR0Name", pmk_r0_name, WPA_PMK_NAME_LEN);
-	if (!wpa_key_mgmt_ft_psk(sm->wpa_key_mgmt))
+	if (!psk_local || !wpa_key_mgmt_ft_psk(sm->wpa_key_mgmt))
 		wpa_ft_store_pmk_r0(sm->wpa_auth, sm->addr, pmk_r0,
 				    pmk_r0_name, sm->pairwise, vlan, expiresIn,
 				    session_timeout, identity, identity_len,
@@ -852,7 +853,7 @@ int wpa_auth_derive_ptk_ft(struct wpa_state_machine *sm, const u8 *pmk,
 	wpa_hexdump_key(MSG_DEBUG, "FT: PMK-R1", pmk_r1, PMK_LEN);
 	wpa_hexdump(MSG_DEBUG, "FT: PMKR1Name", sm->pmk_r1_name,
 		    WPA_PMK_NAME_LEN);
-	if (!wpa_key_mgmt_ft_psk(sm->wpa_key_mgmt))
+	if (!psk_local || !wpa_key_mgmt_ft_psk(sm->wpa_key_mgmt))
 		wpa_ft_store_pmk_r1(sm->wpa_auth, sm->addr, pmk_r1,
 				    sm->pmk_r1_name, sm->pairwise, vlan,
 				    expiresIn, session_timeout, identity,
@@ -1432,7 +1433,8 @@ static int wpa_ft_process_auth_req(struct wpa_state_machine *sm,
 	wpa_hexdump(MSG_DEBUG, "FT: Derived requested PMKR1Name",
 		    pmk_r1_name, WPA_PMK_NAME_LEN);
 
-	if (wpa_key_mgmt_ft_psk(sm->wpa_key_mgmt)) {
+	if (conf->ft_psk_generate_local &&
+	    wpa_key_mgmt_ft_psk(sm->wpa_key_mgmt)) {
 		if (wpa_ft_psk_pmk_r1(sm, pmk_r1_name, pmk_r1, &pairwise,
 				      &vlan, identity, &identity_len,
 				      radius_cui, &radius_cui_len,
