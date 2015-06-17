@@ -1920,7 +1920,7 @@ int wpa_auth_derive_ptk_ft(struct wpa_state_machine *sm, const u8 *pmk,
 	const u8 *ssid = sm->wpa_auth->conf.ssid;
 	size_t ssid_len = sm->wpa_auth->conf.ssid_len;
 	int psk_local = sm->wpa_auth->conf.ft_psk_generate_local;
-	int expires_in = sm->wpa_auth->conf.r0_key_lifetime * 60;
+	int expires_in = sm->wpa_auth->conf.r0_key_lifetime;
 	struct vlan_description vlan;
 	const u8 *identity, *radius_cui;
 	int identity_len, radius_cui_len;
