@@ -1233,7 +1233,7 @@ int wpa_auth_derive_ptk_ft(struct wpa_state_machine *sm, const u8 *pmk,
 	const u8 *ssid = sm->wpa_auth->conf.ssid;
 	size_t ssid_len = sm->wpa_auth->conf.ssid_len;
 	int psk_local = sm->wpa_auth->conf.ft_psk_generate_local;
-	int expires_in = sm->wpa_auth->conf.r0_key_lifetime * 60;
+	int expires_in = sm->wpa_auth->conf.r0_key_lifetime;
 	struct vlan_description vlan;
 	const u8 *identity, *radius_cui;
 	int identity_len, radius_cui_len;
@@ -2643,7 +2643,7 @@ static int wpa_ft_rrb_rx_r1(struct wpa_authenticator *wpa_auth,
 	int pairwise;
 	int ret = -1;
 	int expires_in;
-	int max_expires_in = wpa_auth->conf.r0_key_lifetime * 60;
+	int max_expires_in = wpa_auth->conf.r0_key_lifetime;
 	int session_timeout;
 	struct vlan_description vlan;
 	char buf[256];
