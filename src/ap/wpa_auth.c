@@ -2308,7 +2308,7 @@ SM_STATE(WPA_PTK, PTKINITNEGOTIATING)
 		*pos++ = WLAN_EID_TIMEOUT_INTERVAL;
 		*pos++ = 5;
 		*pos++ = WLAN_TIMEOUT_KEY_LIFETIME;
-		WPA_PUT_LE32(pos, conf->r0_key_lifetime * 60);
+		WPA_PUT_LE32(pos, conf->r0_key_lifetime);
 		pos += 4;
 	}
 #endif /* CONFIG_IEEE80211R */

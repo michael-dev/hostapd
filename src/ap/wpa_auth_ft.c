@@ -818,7 +818,7 @@ int wpa_auth_derive_ptk_ft(struct wpa_state_machine *sm, const u8 *pmk,
 	const u8 *ssid = sm->wpa_auth->conf.ssid;
 	size_t ssid_len = sm->wpa_auth->conf.ssid_len;
 	int psk_local = sm->wpa_auth->conf.ft_psk_generate_local;
-	os_time_t expiresIn = sm->wpa_auth->conf.r0_key_lifetime * 60;
+	os_time_t expiresIn = sm->wpa_auth->conf.r0_key_lifetime;
 	struct ft_vlan vlan;
 	u8 identity[FT_IDENTITY_LEN], radius_cui[FT_RADIUS_CUI_LEN];
 	int identity_len, radius_cui_len, session_timeout;
@@ -2145,7 +2145,7 @@ static int wpa_ft_rrb_rx_resp(struct wpa_authenticator *wpa_auth,
 	struct ft_remote_r0kh *r0kh, *r0kh_wildcard = NULL;
 	int pairwise, res, expiresIn, session_timeout;
 	struct ft_pull_resp_cb_ctx ctx;
-	os_time_t maxExpiresIn = wpa_auth->conf.r0_key_lifetime * 60;
+	os_time_t maxExpiresIn = wpa_auth->conf.r0_key_lifetime;
 
 	wpa_printf(MSG_DEBUG, "FT: Received PMK-R1 pull response");
 
@@ -2257,7 +2257,7 @@ static int wpa_ft_rrb_rx_push(struct wpa_authenticator *wpa_auth,
 	struct os_time now;
 	os_time_t tsend;
 	int pairwise, expiresIn, session_timeout;
-	os_time_t maxExpiresIn = wpa_auth->conf.r0_key_lifetime * 60;
+	os_time_t maxExpiresIn = wpa_auth->conf.r0_key_lifetime;
 
 	wpa_printf(MSG_DEBUG, "FT: Received PMK-R1 push");
 
