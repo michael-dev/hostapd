@@ -498,11 +498,15 @@ static int wpa_ft_store_pmk_r1(struct wpa_authenticator *wpa_auth,
 			       const u8* radius_cui, u8 radius_cui_len)
 {
 	struct wpa_ft_pmk_cache *cache = wpa_auth->ft_pmk_cache;
+	int maxExpiresIn = wpa_auth->conf.r1_max_key_lifetime;
 	struct wpa_ft_pmk_r1_sa *r1;
 	struct os_reltime now;
 
 	/* TODO: add expiration and limit on number of entries in cache */
 	os_get_reltime(&now);
+
+	if (maxExpiresIn && maxExpiresIn < expiresIn)
+		expiresIn = maxExpiresIn;
 
 	r1 = os_zalloc(sizeof(*r1));
 	if (r1 == NULL)

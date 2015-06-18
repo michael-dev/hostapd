@@ -199,6 +199,7 @@ struct wpa_auth_config {
 	int rkh_neg_timeout;
 	int rkh_pull_timeout; /* ms */
 	int rkh_pull_retries;
+	int r1_max_key_lifetime;
 	u32 reassociation_deadline;
 	struct ft_remote_r0kh **r0kh_list;
 	struct ft_remote_r1kh **r1kh_list;
