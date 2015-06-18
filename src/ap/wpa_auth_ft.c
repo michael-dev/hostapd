@@ -713,6 +713,7 @@ void wpa_ft_expire_pull(void *eloop_ctx, void *timeout_ctx)
 				    sm->r0kh_id, sm->r0kh_id_len,
 				    sm->wpa_auth->conf.rkh_neg_timeout);
 	}
+	eloop_cancel_timeout(wpa_ft_expire_pull, sm, NULL); /* cancel multiple timeouts */
 	ft_pull_resp_cb_finish(eloop_ctx, timeout_ctx);
 }
 
