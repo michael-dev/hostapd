@@ -2083,6 +2083,9 @@ static void ft_pull_resp_cb_finish(void *eloop_ctx, void *timeout_ctx)
 	size_t resp_ies_len;
 	u16 status;
 
+	if (sm->ft_pending_cb == NULL || sm->ft_pending_req_ies == NULL)
+		return;
+
 	res = wpa_ft_process_auth_req(sm, wpabuf_head(sm->ft_pending_req_ies),
 				      wpabuf_len(sm->ft_pending_req_ies),
 				      &resp_ies, &resp_ies_len);
