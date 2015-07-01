@@ -690,6 +690,7 @@ static void wpa_ft_rrb_add_r1kh(struct wpa_authenticator *wpa_auth,
 void wpa_ft_sta_deinit(struct wpa_state_machine *sm)
 {
 	eloop_cancel_timeout(wpa_ft_expire_pull, sm, NULL);
+	eloop_cancel_timeout(ft_pull_resp_cb_finish, sm, NULL);
 }
 
 
@@ -714,6 +715,7 @@ void wpa_ft_expire_pull(void *eloop_ctx, void *timeout_ctx)
 				    sm->wpa_auth->conf.rkh_neg_timeout);
 	}
 	eloop_cancel_timeout(wpa_ft_expire_pull, sm, NULL); /* cancel multiple timeouts */
+	eloop_cancel_timeout(ft_pull_resp_cb_finish, sm, NULL);
 	ft_pull_resp_cb_finish(eloop_ctx, timeout_ctx);
 }
 
@@ -2126,7 +2128,9 @@ static int ft_pull_resp_cb(struct wpa_state_machine *sm, void *ctx)
 
 	if (frame->expiresIn == 0xffff)
 		sm->ft_pending_pull_left_retries = 0;
+
 	eloop_cancel_timeout(wpa_ft_expire_pull, sm, NULL);
+	eloop_cancel_timeout(ft_pull_resp_cb_finish, sm, NULL);
 
 	eloop_register_timeout(0, 0, ft_pull_resp_cb_finish, sm, NULL);
 
