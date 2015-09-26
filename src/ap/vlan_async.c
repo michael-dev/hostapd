@@ -372,7 +372,9 @@ static int state_add_to_bridge(struct hostapd_vlan *vlan,
 	br_ifidx = rtnl_link_get_ifindex(bridge);
 	ifidx = rtnl_link_get_master(link);
 	if (ifidx != 0 && ifidx != br_ifidx) {
-		wpa_printf(MSG_ERROR, "VLAN: link %s already on different bridge %d", if_name, ifidx);
+		struct rtnl_link *master = rtnl_link_get(cache, ifidx);
+		wpa_printf(MSG_ERROR, "VLAN: link %s already on different bridge %d (%s), intention was %d (%s)", if_name, ifidx, (master ? rtnl_link_get_name(master) : "<unknown>"), br_ifidx, if_bridge);
+		if (master) rtnl_link_put(master);
 		goto out;
 	}
 
