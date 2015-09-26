@@ -10,6 +10,7 @@
 #include "utils/eloop.h"
 #include "vlan_iface.h"
 #include "vlan_priv.h"
+#include "vlan_if.h"
 
 #include "netlink/msg.h"
 #include "netlink/cache.h"
@@ -373,9 +374,11 @@ static int state_add_to_bridge(struct hostapd_vlan *vlan,
 	ifidx = rtnl_link_get_master(link);
 	if (ifidx != 0 && ifidx != br_ifidx) {
 		struct rtnl_link *master = rtnl_link_get(cache, ifidx);
-		wpa_printf(MSG_ERROR, "VLAN: link %s already on different bridge %d (%s), intention was %d (%s)", if_name, ifidx, (master ? rtnl_link_get_name(master) : "<unknown>"), br_ifidx, if_bridge);
+		wpa_printf(MSG_ERROR, "VLAN: link %s already on different bridge %d (%s)(current: %s), intention was %d (%s)", if_name, ifidx, (master ? rtnl_link_get_name(master) : "<unknown>"), (vlan_if_indextoname(ifidx) ? vlan_if_indextoname(ifidx) : "<NULL>"), br_ifidx, if_bridge);
 		if (master) rtnl_link_put(master);
-		goto out;
+		if (vlan_if_indextoname(ifidx))
+			goto out; // other master still exists ... ups this not a race!
+		//goto out; // cache might be out of sync, I guess
 	}
 
 	if (ifidx != 0) { /* already exists */
