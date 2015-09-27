@@ -7,6 +7,6 @@ int vlan_if_nametoindex(char *ifname)
 
 char* vlan_if_indextoname(int idx)
 {
-	char buf[IF_NAMESIZE];
+	static char buf[IF_NAMESIZE];
 	return if_indextoname(idx, buf);
 };
