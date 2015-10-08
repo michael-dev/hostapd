@@ -45,6 +45,9 @@ struct ft_rrb_frame {
 #define FT_MAX_NUM_TAGGED_VLAN 32
 #define FT_VLAN_DATA_LEN sizeof(struct ft_vlan)
 
+#define FT_IDENTITY_LEN 256
+#define FT_RADIUS_CUI_LEN 256
+
 #define FT_R0KH_R1KH_PULL_NONCE_LEN 16
 #define FT_R0KH_R1KH_PULL_DATA_LEN (FT_R0KH_R1KH_PULL_NONCE_LEN + \
 				    FT_R0KH_ID_MAX_LEN + 1 + \
@@ -77,7 +80,9 @@ struct ft_r0kh_r1kh_pull_frame {
 
 #define FT_R0KH_R1KH_RESP_DATA_LEN (FT_R0KH_R1KH_PULL_NONCE_LEN + \
 				    FT_R1KH_ID_LEN + ETH_ALEN + PMK_LEN + \
-				    WPA_PMK_NAME_LEN + FT_VLAN_DATA_LEN + 2 + 2)
+				    WPA_PMK_NAME_LEN + 2 + 2 + \
+				    FT_VLAN_DATA_LEN + 1 + FT_IDENTITY_LEN + \
+				    1 + FT_RADIUS_CUI_LEN)
 #define FT_R0KH_R1KH_RESP_PAD_LEN (8 - FT_R0KH_R1KH_RESP_DATA_LEN % 8)
 struct ft_r0kh_r1kh_resp_frame {
 	u8 frame_type; /* RSN_REMOTE_FRAME_TYPE_FT_RRB */
@@ -93,13 +98,19 @@ struct ft_r0kh_r1kh_resp_frame {
 	le16 pairwise;
 	le16 expiresIn; /* 0xffff for no-entry */
 	struct ft_vlan vlan;
+	u8 identity_len;
+	u8 identity[FT_IDENTITY_LEN];
+	u8 radius_cui_len;
+	u8 radius_cui[FT_RADIUS_CUI_LEN];
 	u8 pad[FT_R0KH_R1KH_RESP_PAD_LEN]; /* 8-octet boundary for AES block */
 	u8 key_wrap_extra[8];
 } STRUCT_PACKED;
 
 #define FT_R0KH_R1KH_PUSH_DATA_LEN (4 + FT_R1KH_ID_LEN + ETH_ALEN + \
 				    WPA_PMK_NAME_LEN + PMK_LEN + \
-				    WPA_PMK_NAME_LEN + FT_VLAN_DATA_LEN + 2 + 2)
+				    WPA_PMK_NAME_LEN + 2 + 2 + \
+				    FT_VLAN_DATA_LEN + 1 + FT_IDENTITY_LEN + \
+				    1 + FT_RADIUS_CUI_LEN)
 #define FT_R0KH_R1KH_PUSH_PAD_LEN (8 - FT_R0KH_R1KH_PUSH_DATA_LEN % 8)
 struct ft_r0kh_r1kh_push_frame {
 	u8 frame_type; /* RSN_REMOTE_FRAME_TYPE_FT_RRB */
@@ -118,6 +129,10 @@ struct ft_r0kh_r1kh_push_frame {
 	le16 pairwise;
 	le16 expiresIn;
 	struct ft_vlan vlan;
+	u8 identity_len;
+	u8 identity[FT_IDENTITY_LEN];
+	u8 radius_cui_len;
+	u8 radius_cui[FT_RADIUS_CUI_LEN];
 	u8 pad[FT_R0KH_R1KH_PUSH_PAD_LEN]; /* 8-octet boundary for AES block */
 	u8 key_wrap_extra[8];
 } STRUCT_PACKED;
@@ -251,6 +266,15 @@ struct wpa_auth_callbacks {
 		       void *cb_ctx, int cb_ctx_len);
 	int (*set_vlan)(void *ctx, const u8 *sta_addr, struct ft_vlan *vlan);
 	int (*get_vlan)(void *ctx, const u8 *sta_addr, struct ft_vlan *vlan);
+	size_t (*get_identity)(void *ctx, const u8 *sta_addr, u8 *buf,
+			       size_t buflen);
+	size_t (*get_radius_cui)(void *ctx, const u8 *sta_addr, u8 *buf,
+				 size_t buflen);
+	void (*set_identity)(void *ctx, const u8 *sta_addr, u8 *identity,
+			     size_t identity_len);
+	void (*set_radius_cui)(void *ctx, const u8 *sta_addr, u8 *radius_cui,
+			       size_t radius_cui_len);
+
 	int (*send_ft_action)(void *ctx, const u8 *dst,
 			      const u8 *data, size_t data_len);
 	int (*add_tspec)(void *ctx, const u8 *sta_addr, u8 *tspec_ie,
