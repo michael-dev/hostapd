@@ -19,6 +19,10 @@
 #include "vlan_util.h"
 #include "vlan_ifconfig.h"
 
+#include "wpa_auth_glue.h"
+#ifdef CONFIG_RSN_PREAUTH_COPY
+#include "preauth_auth.h"
+#endif /* CONFIG_RSN_PREAUTH_COPY */
 
 static int vlan_if_add(struct hostapd_data *hapd, struct hostapd_vlan *vlan,
 		       int existsok)
@@ -46,6 +50,12 @@ static int vlan_if_add(struct hostapd_data *hapd, struct hostapd_vlan *vlan,
 
 	ifconfig_up(vlan->ifname); /* else wpa group will fail fatal */
 
+#ifdef CONFIG_RSN_PREAUTH_COPY
+	if (!vlan->rsn_preauth)
+		vlan->rsn_preauth = rsn_preauth_snoop_init(hapd,
+							   vlan->ifname);
+#endif /* CONFIG_RSN_PREAUTH_COPY */
+
 	if (hapd->wpa_auth)
 		ret = wpa_auth_ensure_group(hapd->wpa_auth, vlan->vlan_id);
 
@@ -56,6 +66,10 @@ static int vlan_if_add(struct hostapd_data *hapd, struct hostapd_vlan *vlan,
 		   vlan->vlan_id, ret);
 	if (wpa_auth_release_group(hapd->wpa_auth, vlan->vlan_id))
 		wpa_printf(MSG_ERROR, "WPA deinit of %s failed", vlan->ifname);
+
+#ifdef CONFIG_RSN_PREAUTH_COPY
+	rsn_preauth_snoop_deinit(hapd, vlan->ifname, vlan->rsn_preauth);
+#endif /* CONFIG_RSN_PREAUTH_COPY */
 
 	/* group state machine setup failed */
 	if (hostapd_vlan_if_remove(hapd, vlan->ifname))
@@ -74,6 +88,11 @@ int vlan_if_remove(struct hostapd_data *hapd, struct hostapd_vlan *vlan)
 		wpa_printf(MSG_ERROR,
 			   "WPA deinitialization for VLAN %d failed (%d)",
 			   vlan->vlan_id, ret);
+
+#ifdef CONFIG_RSN_PREAUTH_COPY
+	rsn_preauth_snoop_deinit(hapd, vlan->ifname, vlan->rsn_preauth);
+	vlan->rsn_preauth = NULL;
+#endif /* CONFIG_RSN_PREAUTH_COPY */
 
 	return hostapd_vlan_if_remove(hapd, vlan->ifname);
 }
