@@ -79,6 +79,9 @@ struct ft_rrb_frame {
 #define FT_RRB_VLAN_UNTAGGED 12 /* le16 */
 #define FT_RRB_VLAN_TAGGED   13 /* n times le16 */
 
+#define FT_RRB_IDENTITY      14
+#define FT_RRB_RADIUS_CUI    15
+
 struct ft_rrbv1_tlv {
 	le16 type;
 	le16 len;
@@ -87,7 +90,7 @@ struct ft_rrbv1_tlv {
 
 /* session TLVs:
  *   required: [PMK_R1, PMK_R1_NAME, PAIRWISE]
- *   optional: VLAN, EXPIRES_IN
+ *   optional: VLAN, EXPIRES_IN, IDENTITY, RADIUS_CUI
  *
  * pull frame TLVs:
  *   required: NONCE, R0KH_ID, PMK_R0_NAME, R1KH_ID, S1KH_ID
@@ -233,6 +236,13 @@ struct wpa_auth_callbacks {
 			struct vlan_description *vlan);
 	int (*get_vlan)(void *ctx, const u8 *sta_addr,
 			struct vlan_description *vlan);
+	size_t (*get_identity)(void *ctx, const u8 *sta_addr, const u8 **buf);
+	size_t (*get_radius_cui)(void *ctx, const u8 *sta_addr, const u8 **buf);
+	void (*set_identity)(void *ctx, const u8 *sta_addr,
+			     const u8 *identity, size_t identity_len);
+	void (*set_radius_cui)(void *ctx, const u8 *sta_addr,
+			       const u8 *radius_cui, size_t radius_cui_len);
+
 	int (*send_ft_action)(void *ctx, const u8 *dst,
 			      const u8 *data, size_t data_len);
 	int (*add_tspec)(void *ctx, const u8 *sta_addr, u8 *tspec_ie,
