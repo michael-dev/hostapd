@@ -27,6 +27,10 @@
 #include "vlan_util.h"
 #include "vlan_ifconfig.h"
 
+#ifdef CONFIG_RSN_PREAUTH_COPY
+#include "preauth_auth.h"
+#endif /* CONFIG_RSN_PREAUTH_COPY */
+
 
 struct full_dynamic_vlan {
 	int s; /* socket on which to listen for new/removed interfaces. */
@@ -459,6 +463,12 @@ void vlan_newlink(const char *ifname, struct hostapd_data *hapd)
 	}
 
 	ifconfig_up(ifname);
+
+#ifdef CONFIG_RSN_PREAUTH_COPY
+	if (!vlan->rsn_preauth)
+		vlan->rsn_preauth = rsn_preauth_snoop_init(hapd,
+							   vlan->ifname);
+#endif /* CONFIG_RSN_PREAUTH_COPY */
 }
 
 
@@ -531,6 +541,11 @@ void vlan_dellink(const char *ifname, struct hostapd_data *hapd)
 		int *tagged = vlan->vlan_desc.tagged;
 		char br_name[IFNAMSIZ];
 		int i;
+
+#ifdef CONFIG_RSN_PREAUTH_COPY
+		rsn_preauth_snoop_deinit(hapd, vlan->ifname,
+					 vlan->rsn_preauth);
+#endif /* CONFIG_RSN_PREAUTH_COPY */
 
 		for (i = 0; i < MAX_NUM_TAGGED_VLAN && tagged[i]; i++) {
 			if (tagged[i] == untagged ||
