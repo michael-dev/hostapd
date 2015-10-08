@@ -101,6 +101,46 @@ wpa_ft_get_vlan(struct wpa_authenticator *wpa_auth, const u8 *sta_addr,
 }
 
 
+static size_t
+wpa_ft_get_identity(struct wpa_authenticator *wpa_auth, const u8 *sta_addr, u8 *buf, size_t buflen)
+{
+	if (wpa_auth->cb.get_identity == NULL)
+		return 0;
+	return wpa_auth->cb.get_identity(wpa_auth->cb.ctx, sta_addr, buf, buflen);
+}
+
+
+static size_t
+wpa_ft_get_radius_cui(struct wpa_authenticator *wpa_auth, const u8 *sta_addr, u8 *buf, size_t buflen)
+{
+	if (wpa_auth->cb.get_radius_cui == NULL)
+		return 0;
+	return wpa_auth->cb.get_radius_cui(wpa_auth->cb.ctx, sta_addr, buf, buflen);
+}
+
+
+static void
+wpa_ft_set_identity(struct wpa_authenticator *wpa_auth, const u8 *sta_addr,
+		    u8 *identity, size_t identity_len)
+{
+	if (wpa_auth->cb.set_identity == NULL)
+		return;
+	wpa_auth->cb.set_identity(wpa_auth->cb.ctx, sta_addr, identity,
+				  identity_len);
+}
+
+
+static void
+wpa_ft_set_radius_cui(struct wpa_authenticator *wpa_auth, const u8 *sta_addr,
+		      u8 *radius_cui, size_t radius_cui_len)
+{
+	if (wpa_auth->cb.set_radius_cui == NULL)
+		return;
+	wpa_auth->cb.set_radius_cui(wpa_auth->cb.ctx, sta_addr, radius_cui,
+				    radius_cui_len);
+}
+
+
 static int wpa_ft_add_tspec(struct wpa_authenticator *wpa_auth,
 			    const u8 *sta_addr,
 			    u8 *tspec_ie, size_t tspec_ielen)
@@ -191,7 +231,11 @@ struct wpa_ft_pmk_r0_sa {
 	int pairwise; /* Pairwise cipher suite, WPA_CIPHER_* */
 	struct ft_vlan vlan;
 	os_time_t expiration; /* 0 for no expiration */
-	/* TODO: identity, radius_class, EAP type, expiration from EAPOL */
+	u8 identity[FT_IDENTITY_LEN];
+	u8 identity_len;
+	u8 radius_cui[FT_RADIUS_CUI_LEN];
+	u8 radius_cui_len;
+	/* TODO: radius_class, EAP type, expiration from EAPOL */
 	int pmk_r1_pushed;
 };
 
@@ -202,7 +246,11 @@ struct wpa_ft_pmk_r1_sa {
 	u8 spa[ETH_ALEN];
 	int pairwise; /* Pairwise cipher suite, WPA_CIPHER_* */
 	struct ft_vlan vlan;
-	/* TODO: expiration, identity, radius_class, EAP type */
+	u8 identity[FT_IDENTITY_LEN];
+	u8 identity_len;
+	u8 radius_cui[FT_RADIUS_CUI_LEN];
+	u8 radius_cui_len;
+	/* TODO: expiration from EAPOL, radius_class, EAP type */
 };
 
 struct wpa_ft_pmk_cache {
@@ -310,7 +358,9 @@ static int wpa_ft_store_pmk_r0(struct wpa_authenticator *wpa_auth,
 			       const u8 *spa, const u8 *pmk_r0,
 			       const u8 *pmk_r0_name, int pairwise,
 			       const struct ft_vlan vlan,
-			       const int expiresIn)
+			       const int expiresIn,
+			       const u8* identity, u8 identity_len,
+			       const u8* radius_cui, u8 radius_cui_len)
 {
 	struct wpa_ft_pmk_cache *cache = wpa_auth->ft_pmk_cache;
 	struct wpa_ft_pmk_r0_sa *r0;
@@ -330,6 +380,14 @@ static int wpa_ft_store_pmk_r0(struct wpa_authenticator *wpa_auth,
 	os_memcpy(&r0->vlan, &vlan, FT_VLAN_DATA_LEN);
 	if (expiresIn > 0)
 		r0->expiration = now.sec + expiresIn;
+	if (identity && identity_len <= FT_IDENTITY_LEN) {
+		os_memcpy(r0->identity, identity, identity_len);
+		r0->identity_len = identity_len;
+	}
+	if (radius_cui && radius_cui_len <= FT_RADIUS_CUI_LEN) {
+		os_memcpy(r0->radius_cui, radius_cui, radius_cui_len);
+		r0->radius_cui_len = radius_cui_len;
+	}
 
 	dl_list_add(&cache->pmk_r0, &r0->list);
 
@@ -341,10 +399,16 @@ static int wpa_ft_store_pmk_r0(struct wpa_authenticator *wpa_auth,
 }
 
 
+/*
+ * identity and radius_cui need to be FT_IDENTITY_LEN / FT_RADIUS_CUI_LEN big
+ * at least
+ */
 static int wpa_ft_fetch_pmk_r0(struct wpa_authenticator *wpa_auth,
 			       const u8 *spa, const u8 *pmk_r0_name,
 			       u8 *pmk_r0, int *pairwise,
-			       struct ft_vlan *vlan, int *expiresIn)
+			       struct ft_vlan *vlan, int *expiresIn,
+			       u8 *identity, u8 *identity_len,
+			       u8 *radius_cui, u8 *radius_cui_len)
 {
 	struct wpa_ft_pmk_cache *cache = wpa_auth->ft_pmk_cache;
 	struct wpa_ft_pmk_r0_sa *r0;
@@ -366,6 +430,16 @@ static int wpa_ft_fetch_pmk_r0(struct wpa_authenticator *wpa_auth,
 				*expiresIn = 1;
 			else
 				*expiresIn = 0;
+			if (identity && identity_len) {
+				os_memcpy(identity, r0->identity,
+					  r0->identity_len);
+				*identity_len = r0->identity_len;
+			}
+			if (radius_cui && radius_cui_len) {
+				os_memcpy(radius_cui, r0->radius_cui,
+					  r0->radius_cui_len);
+				*radius_cui_len = r0->radius_cui_len;
+			}
 
 			return 0;
 		}
@@ -379,7 +453,9 @@ static int wpa_ft_store_pmk_r1(struct wpa_authenticator *wpa_auth,
 			       const u8 *spa, const u8 *pmk_r1,
 			       const u8 *pmk_r1_name, int pairwise,
 			       const struct ft_vlan vlan,
-			       int expiresIn)
+			       int expiresIn,
+			       const u8* identity, u8 identity_len,
+			       const u8* radius_cui, u8 radius_cui_len)
 {
 	struct wpa_ft_pmk_cache *cache = wpa_auth->ft_pmk_cache;
 	struct wpa_ft_pmk_r1_sa *r1;
@@ -395,6 +471,14 @@ static int wpa_ft_store_pmk_r1(struct wpa_authenticator *wpa_auth,
 	os_memcpy(r1->spa, spa, ETH_ALEN);
 	r1->pairwise = pairwise;
 	os_memcpy(&r1->vlan, &vlan, FT_VLAN_DATA_LEN);
+	if (identity && identity_len <= FT_IDENTITY_LEN) {
+		os_memcpy(r1->identity, identity, identity_len);
+		r1->identity_len = identity_len;
+	}
+	if (radius_cui && radius_cui_len <= FT_RADIUS_CUI_LEN) {
+		os_memcpy(r1->radius_cui, radius_cui, radius_cui_len);
+		r1->radius_cui_len = radius_cui_len;
+	}
 
 	dl_list_add(&cache->pmk_r1, &r1->list);
 
@@ -409,7 +493,9 @@ static int wpa_ft_store_pmk_r1(struct wpa_authenticator *wpa_auth,
 static int wpa_ft_fetch_pmk_r1(struct wpa_authenticator *wpa_auth,
 			       const u8 *spa, const u8 *pmk_r1_name,
 			       u8 *pmk_r1, int *pairwise,
-			       struct ft_vlan *vlan)
+			       struct ft_vlan *vlan,
+			       u8 *identity, u8 *identity_len,
+			       u8 *radius_cui, u8 *radius_cui_len)
 {
 	struct wpa_ft_pmk_cache *cache = wpa_auth->ft_pmk_cache;
 	struct wpa_ft_pmk_r1_sa *r1;
@@ -423,6 +509,16 @@ static int wpa_ft_fetch_pmk_r1(struct wpa_authenticator *wpa_auth,
 				*pairwise = r1->pairwise;
 			if (vlan)
 				os_memcpy(vlan, &r1->vlan, FT_VLAN_DATA_LEN);
+			if (identity && identity_len) {
+				os_memcpy(identity, r1->identity,
+					  r1->identity_len);
+				*identity_len = r1->identity_len;
+			}
+			if (radius_cui && radius_cui_len) {
+				os_memcpy(radius_cui, r1->radius_cui,
+					  r1->radius_cui_len);
+				*radius_cui_len = r1->radius_cui_len;
+			}
 			return 0;
 		}
 	}
@@ -671,6 +767,8 @@ int wpa_auth_derive_ptk_ft(struct wpa_state_machine *sm, const u8 *pmk,
 	int psk_local = sm->wpa_auth->conf.ft_psk_generate_local;
 	os_time_t expiresIn = sm->wpa_auth->conf.r0_key_lifetime * 60;
 	struct ft_vlan vlan;
+	u8 identity[FT_IDENTITY_LEN], radius_cui[FT_RADIUS_CUI_LEN];
+	int identity_len, radius_cui_len;
 
 	if (sm->xxkey_len == 0) {
 		wpa_printf(MSG_DEBUG, "FT: XXKey not available for key "
@@ -683,6 +781,8 @@ int wpa_auth_derive_ptk_ft(struct wpa_state_machine *sm, const u8 *pmk,
 			   MAC2STR(sm->addr));
 		return -1;
 	}
+	identity_len = wpa_ft_get_identity(sm->wpa_auth, sm->addr, identity, sizeof(identity));
+	radius_cui_len = wpa_ft_get_radius_cui(sm->wpa_auth, sm->addr, radius_cui, sizeof(radius_cui));
 
 	wpa_derive_pmk_r0(sm->xxkey, sm->xxkey_len, ssid, ssid_len, mdid,
 			  r0kh, r0kh_len, sm->addr, pmk_r0, pmk_r0_name);
@@ -690,8 +790,9 @@ int wpa_auth_derive_ptk_ft(struct wpa_state_machine *sm, const u8 *pmk,
 	wpa_hexdump(MSG_DEBUG, "FT: PMKR0Name", pmk_r0_name, WPA_PMK_NAME_LEN);
 	if (!psk_local || !wpa_key_mgmt_ft_psk(sm->wpa_key_mgmt))
 		wpa_ft_store_pmk_r0(sm->wpa_auth, sm->addr, pmk_r0,
-				    pmk_r0_name, sm->pairwise, vlan,
-				    expiresIn);
+				    pmk_r0_name, sm->pairwise, vlan, expiresIn,
+				    identity, identity_len, radius_cui,
+				    radius_cui_len);
 
 	wpa_derive_pmk_r1(pmk_r0, pmk_r0_name, r1kh, sm->addr,
 			  pmk_r1, sm->pmk_r1_name);
@@ -701,7 +802,8 @@ int wpa_auth_derive_ptk_ft(struct wpa_state_machine *sm, const u8 *pmk,
 	if (!psk_local || !wpa_key_mgmt_ft_psk(sm->wpa_key_mgmt))
 		wpa_ft_store_pmk_r1(sm->wpa_auth, sm->addr, pmk_r1,
 				    sm->pmk_r1_name, sm->pairwise, vlan,
-				    expiresIn);
+				    expiresIn, identity, identity_len,
+				    radius_cui, radius_cui_len);
 
 	return wpa_pmk_r1_to_ptk(pmk_r1, sm->SNonce, sm->ANonce, sm->addr,
 				 sm->wpa_auth->addr, sm->pmk_r1_name,
@@ -1108,7 +1210,9 @@ void wpa_ft_install_ptk(struct wpa_state_machine *sm)
 static int wpa_ft_psk_pmk_r1(struct wpa_state_machine *sm,
 			     const u8 *req_pmk_r1_name,
 			     u8 *out_pmk_r1, int *out_pairwise,
-			     struct ft_vlan *out_vlan)
+			     struct ft_vlan *out_vlan, u8 *out_identity,
+			     u8 *out_identity_len, u8 *out_radius_cui,
+			     u8 *out_radius_cui_len)
 {
 	const u8 *pmk = NULL;
 	u8 pmk_r0[PMK_LEN], pmk_r0_name[WPA_PMK_NAME_LEN];
@@ -1149,6 +1253,10 @@ static int wpa_ft_psk_pmk_r1(struct wpa_state_machine *sm,
 					   MAC2STR(sm->addr));
 				return -1;
 			}
+			if (out_identity && out_identity_len)
+				*out_identity_len = wpa_ft_get_identity(sm->wpa_auth, sm->addr, out_identity, FT_IDENTITY_LEN);
+			if (out_radius_cui && out_radius_cui_len)
+				*out_radius_cui_len = wpa_ft_get_radius_cui(sm->wpa_auth, sm->addr, out_radius_cui, FT_RADIUS_CUI_LEN);
 			return 0;
 		}
 	}
@@ -1209,6 +1317,8 @@ static int wpa_ft_process_auth_req(struct wpa_state_machine *sm,
 	u8 *pos, *end;
 	int pairwise;
 	struct ft_vlan vlan;
+	u8 identity[FT_IDENTITY_LEN], radius_cui[FT_RADIUS_CUI_LEN];
+	u8 identity_len = 0, radius_cui_len = 0;
 
 	*resp_ies = NULL;
 	*resp_ies_len = 0;
@@ -1270,11 +1380,13 @@ static int wpa_ft_process_auth_req(struct wpa_state_machine *sm,
 	if (conf->ft_psk_generate_local &&
 	    wpa_key_mgmt_ft_psk(sm->wpa_key_mgmt)) {
 		if (wpa_ft_psk_pmk_r1(sm, pmk_r1_name, pmk_r1, &pairwise,
-				       &vlan) < 0)
+				      &vlan, identity, &identity_len,
+				      radius_cui, &radius_cui_len) < 0)
 			return WLAN_STATUS_INVALID_PMKID;
 	} else
 	if (wpa_ft_fetch_pmk_r1(sm->wpa_auth, sm->addr, pmk_r1_name, pmk_r1,
-		    &pairwise, &vlan) < 0) {
+		    &pairwise, &vlan, identity, &identity_len, radius_cui,
+		    &radius_cui_len) < 0) {
 		if (wpa_ft_pull_pmk_r1(sm, ies, ies_len, parse.rsn_pmkid) < 0) {
 			wpa_printf(MSG_DEBUG, "FT: Did not have matching "
 				   "PMK-R1 and unknown R0KH-ID");
@@ -1319,6 +1431,8 @@ static int wpa_ft_process_auth_req(struct wpa_state_machine *sm,
 		wpa_printf(MSG_DEBUG, "FT: Failed to configure VLAN");
 		return WLAN_STATUS_UNSPECIFIED_FAILURE;
 	}
+	wpa_ft_set_identity(sm->wpa_auth, sm->addr, identity, identity_len);
+	wpa_ft_set_radius_cui(sm->wpa_auth, sm->addr, radius_cui, radius_cui_len);
 
 	buflen = 2 + sizeof(struct rsn_mdie) + 2 + sizeof(struct rsn_ftie) +
 		2 + FT_R1KH_ID_LEN + 200;
@@ -1780,7 +1894,6 @@ static int wpa_ft_rrb_rx_pull(struct wpa_authenticator *wpa_auth,
 	struct ft_r0kh_r1kh_resp_frame resp, r;
 	u8 pmk_r0[PMK_LEN];
 	int pairwise;
-	struct ft_vlan vlan;
 	int expiresIn;
 
 	wpa_printf(MSG_DEBUG, "FT: Received PMK-R1 pull");
@@ -1851,7 +1964,9 @@ static int wpa_ft_rrb_rx_pull(struct wpa_authenticator *wpa_auth,
 	os_memcpy(r.r1kh_id, f.r1kh_id, FT_R1KH_ID_LEN);
 	os_memcpy(r.s1kh_id, f.s1kh_id, ETH_ALEN);
 	if (wpa_ft_fetch_pmk_r0(wpa_auth, f.s1kh_id, f.pmk_r0_name, pmk_r0,
-				&pairwise, &vlan, &expiresIn) < 0) {
+				&pairwise, &r.vlan, &expiresIn,
+				r.identity, &r.identity_len,
+				r.radius_cui, &r.radius_cui_len) < 0) {
 		wpa_printf(MSG_DEBUG, "FT: No matching PMKR0Name found for "
 			   "PMK-R1 pull");
 		r.expiresIn = 0xffff;
@@ -1861,8 +1976,14 @@ static int wpa_ft_rrb_rx_pull(struct wpa_authenticator *wpa_auth,
 		wpa_hexdump_key(MSG_DEBUG, "FT: PMK-R1", r.pmk_r1, PMK_LEN);
 		wpa_hexdump(MSG_DEBUG, "FT: PMKR1Name", r.pmk_r1_name,
 			    WPA_PMK_NAME_LEN);
+		wpa_hexdump(MSG_DEBUG, "FT: PMK-R1 - Identity",
+				r.identity, r.identity_len);
+		wpa_hexdump(MSG_DEBUG, "FT: PMK-R1 - Cui",
+				r.radius_cui, r.radius_cui_len);
+		wpa_printf(MSG_DEBUG, "FT: PMK-R1 - vlan %d%s",
+			   le_to_host16(r.vlan.untagged),
+			   r.vlan.tagged[0] ? "+" : "");
 		r.pairwise = host_to_le16(pairwise);
-		os_memcpy(&r.vlan, &vlan, FT_VLAN_DATA_LEN);
 		r.expiresIn = host_to_le16(expiresIn);
 	}
 	os_memset(r.pad, 0, sizeof(r.pad));
@@ -2032,6 +2153,10 @@ static int wpa_ft_rrb_rx_resp(struct wpa_authenticator *wpa_auth,
 				f.pmk_r1, PMK_LEN);
 		wpa_hexdump(MSG_DEBUG, "FT: PMK-R1 pull - PMKR1Name",
 				f.pmk_r1_name, WPA_PMK_NAME_LEN);
+		wpa_hexdump(MSG_DEBUG, "FT: PMK-R1 pull - Identity",
+				f.identity, f.identity_len);
+		wpa_hexdump(MSG_DEBUG, "FT: PMK-R1 pull - Cui",
+				f.radius_cui, f.radius_cui_len);
 		wpa_printf(MSG_DEBUG, "FT: PMK-R1 pull - vlan %d%s",
 			   le_to_host16(f.vlan.untagged),
 			   f.vlan.tagged[0] ? "+" : "");
@@ -2040,7 +2165,9 @@ static int wpa_ft_rrb_rx_resp(struct wpa_authenticator *wpa_auth,
 			expiresIn = maxExpiresIn;
 		res = wpa_ft_store_pmk_r1(wpa_auth, f.s1kh_id, f.pmk_r1,
 					  f.pmk_r1_name, pairwise, f.vlan,
-					  expiresIn);
+					  expiresIn,
+					  f.identity, f.identity_len,
+					  f.radius_cui, f.radius_cui_len);
 	}
 
 	wpa_printf(MSG_DEBUG, "FT: Look for pending pull request");
@@ -2138,12 +2265,17 @@ static int wpa_ft_rrb_rx_push(struct wpa_authenticator *wpa_auth,
 			f.pmk_r1, PMK_LEN);
 	wpa_hexdump(MSG_DEBUG, "FT: PMK-R1 push - PMKR1Name",
 			f.pmk_r1_name, WPA_PMK_NAME_LEN);
+	wpa_hexdump(MSG_DEBUG, "FT: PMK-R1 push - Identity",
+			f.identity, f.identity_len);
+	wpa_hexdump(MSG_DEBUG, "FT: PMK-R1 push - Cui",
+			f.radius_cui, f.radius_cui_len);
 	wpa_printf(MSG_DEBUG, "FT: PMK-R1 push - vlan %d%s", le_to_host16(f.vlan.untagged), f.vlan.tagged[0] ? "+" : "");
 
 	if (expiresIn <= 0 || expiresIn > maxExpiresIn)
 		expiresIn = maxExpiresIn;
 	wpa_ft_store_pmk_r1(wpa_auth, f.s1kh_id, f.pmk_r1, f.pmk_r1_name,
-			    pairwise, f.vlan, expiresIn);
+			    pairwise, f.vlan, expiresIn, f.identity,
+			    f.identity_len, f.radius_cui, f.radius_cui_len);
 	os_memset(f.pmk_r1, 0, PMK_LEN);
 
 	return 0;
@@ -2308,6 +2440,10 @@ static void wpa_ft_generate_pmk_r1(struct wpa_authenticator *wpa_auth,
 	f.pairwise = host_to_le16(pairwise);
 	f.vlan = pmk_r0->vlan;
 	f.expiresIn = host_to_le16(expiresIn);
+	os_memcpy(f.identity, pmk_r0->identity, pmk_r0->identity_len);
+	f.identity_len = pmk_r0->identity_len;
+	os_memcpy(f.radius_cui, pmk_r0->radius_cui, pmk_r0->radius_cui_len);
+	f.radius_cui_len = pmk_r0->radius_cui_len;
 	os_memset(f.pad, 0, sizeof(f.pad));
 	plain = ((const u8 *) &f) + offsetof(struct ft_r0kh_r1kh_push_frame,
 					     timestamp);
