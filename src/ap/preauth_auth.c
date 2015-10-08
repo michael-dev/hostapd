@@ -25,6 +25,9 @@
 #include "bridge.h"
 #include "dummy.h"
 #include "ifconfig.h"
+#ifdef CONFIG_RSN_PREAUTH_COPY
+#include "l2_snoop.h"
+#endif /* CONFIG_RSN_PREAUTH_COPY */
 
 #ifndef ETH_P_PREAUTH
 #define ETH_P_PREAUTH 0x88C7 /* IEEE 802.11i pre-authentication */
@@ -40,6 +43,23 @@ struct rsn_preauth_interface {
 	int ifindex;
 };
 
+#ifdef CONFIG_RSN_PREAUTH_COPY
+struct rsn_preauth_copy_interface {
+	struct l2_snoop_data *l2;
+	char ifname[IFNAMSIZ+1];
+	struct hostapd_data *hapd;
+};
+
+
+static struct rsn_preauth_copy_interface*
+rsn_preauth_snoop_init_cb(struct hostapd_data *hapd, char* ifname,
+			  void (*rx_callback)(void *ctx, const u8 *src_addr,
+						const u8 *buf, size_t len));
+static void rsn_preauth_snoop_from_sta(void *ctx, const u8 *src_addr,
+				       const u8 *buf, size_t len);
+static void rsn_preauth_snoop_to_sta(void *ctx, const u8 *src_addr,
+				     const u8 *buf, size_t len);
+#endif /* CONFIG_RSN_PREAUTH_COPY */
 
 static void rsn_preauth_receive(void *ctx, const u8 *src_addr,
 				const u8 *buf, size_t len)
@@ -151,6 +171,7 @@ fail1:
 
 void rsn_preauth_iface_deinit(struct hostapd_data *hapd)
 {
+	struct hostapd_bss_config *conf = hapd->conf;
 	struct rsn_preauth_interface *piface, *prev;
 	char dummy_iface[IFNAMSIZ+1];
 
@@ -162,7 +183,7 @@ void rsn_preauth_iface_deinit(struct hostapd_data *hapd)
 		if (hapd->conf->rsn_preauth_autoconf_bridge) {
 #ifdef CONFIG_LIBNL3_ROUTE
 			snprintf(dummy_iface, sizeof(dummy_iface), "pre%s",
-				 hapd->conf->iface);
+				 conf->iface);
 			ifconfig_down(dummy_iface);
 			br_delif(prev->ifname, dummy_iface);
 			dummy_del(dummy_iface);
@@ -172,6 +193,14 @@ void rsn_preauth_iface_deinit(struct hostapd_data *hapd)
 		os_free(prev->ifname);
 		os_free(prev);
 	}
+
+#ifdef CONFIG_RSN_PREAUTH_COPY
+	rsn_preauth_snoop_deinit(hapd, conf->rsn_preauth_copy_iface,
+				 hapd->preauth_copy_iface);
+	hapd->preauth_copy_iface = NULL;
+	rsn_preauth_snoop_deinit(hapd, conf->iface, hapd->preauth_vlan0);
+	hapd->preauth_vlan0 = NULL;
+#endif /* CONFIG_RSN_PREAUTH_COPY */
 }
 
 
@@ -180,7 +209,7 @@ int rsn_preauth_iface_init(struct hostapd_data *hapd)
 	char *tmp, *start, *end;
 
 	if (hapd->conf->rsn_preauth_interfaces == NULL)
-		return 0;
+		goto skip_preauth_iface_init;
 
 	tmp = os_strdup(hapd->conf->rsn_preauth_interfaces);
 	if (tmp == NULL)
@@ -207,6 +236,20 @@ int rsn_preauth_iface_init(struct hostapd_data *hapd)
 			break;
 	}
 	os_free(tmp);
+
+skip_preauth_iface_init:
+#ifdef CONFIG_RSN_PREAUTH_COPY
+	if (hapd->preauth_copy_iface)
+		rsn_preauth_snoop_deinit(hapd,
+					 hapd->conf->rsn_preauth_copy_iface,
+					 rsn_preauth_snoop_to_sta);
+
+	hapd->preauth_copy_iface = rsn_preauth_snoop_init_cb(hapd,
+					   hapd->conf->rsn_preauth_copy_iface,
+					   rsn_preauth_snoop_to_sta);
+	hapd->preauth_vlan0 = rsn_preauth_snoop_init(hapd, hapd->conf->iface);
+#endif /* CONFIG_RSN_PREAUTH_COPY */
+
 	return 0;
 }
 
@@ -298,5 +341,198 @@ void rsn_preauth_free_station(struct hostapd_data *hapd, struct sta_info *sta)
 {
 	eloop_cancel_timeout(rsn_preauth_finished_cb, hapd, sta);
 }
+
+#ifdef CONFIG_RSN_PREAUTH_COPY
+static struct rsn_preauth_copy_interface*
+rsn_preauth_snoop_init_cb(struct hostapd_data *hapd, char* ifname,
+			    void (*rx_callback)(void *ctx, const u8 *src_addr,
+						const u8 *buf, size_t len))
+{
+	if (!hapd->conf->rsn_preauth_copy_iface[0])
+		return NULL;
+
+	struct rsn_preauth_copy_interface *ctx;
+
+	ctx = os_zalloc(sizeof(*ctx));
+
+	if (ctx == NULL) {
+		wpa_printf(MSG_ERROR,
+			   "RSN: rsn_preauth_init_cb: Failed to alloc ctx");
+		goto fail;
+	}
+
+	ifconfig_up(ifname);
+
+	os_strlcpy(ctx->ifname, ifname, sizeof(ctx->ifname));
+	ctx->hapd = hapd;
+	ctx->l2 = l2_snoop_init(ifname, ETH_P_PREAUTH, rx_callback, ctx);
+
+	if (ctx->l2 == NULL) {
+		wpa_printf(MSG_ERROR, "RSN: failed to start L2 snooping on %s,"
+			   " error: %s", ifname, strerror(errno));
+		goto fail;
+	}
+
+	return ctx;
+fail:
+	if (ctx && ctx->l2)
+		l2_snoop_deinit(ctx->l2);
+	if (ctx)
+		os_free(ctx);
+	return NULL;
+}
+
+void* rsn_preauth_snoop_init(struct hostapd_data *hapd, char* ifname) {
+	return rsn_preauth_snoop_init_cb(hapd, ifname,
+					 rsn_preauth_snoop_from_sta);
+}
+
+void rsn_preauth_snoop_deinit(struct hostapd_data *hapd, char* ifname,
+			      void *ctx_ptr)
+{
+	struct rsn_preauth_copy_interface *ctx = ctx_ptr;
+	wpa_printf(MSG_DEBUG, "RSN: deinit pre-authentification snooping"
+			      " on %s", ifname);
+
+	if (ctx && ctx->l2)
+		l2_snoop_deinit(ctx->l2);
+	if (ctx)
+		os_free(ctx);
+}
+
+
+struct rsn_preauth_iter_data {
+	struct hostapd_data *src_hapd;
+	const u8 *src_addr;
+	const u8 *dst;
+	const u8 *data;
+	size_t data_len;
+	const char* dest_iface;
+};
+
+
+static int rsn_preauth_iter(struct hostapd_iface *iface, void *ctx)
+{
+	struct rsn_preauth_iter_data *idata = ctx;
+	struct hostapd_data *hapd;
+	size_t j;
+	struct rsn_preauth_interface *piface;
+
+	for (j = 0; j < iface->num_bss; j++) {
+		hapd = iface->bss[j];
+		if (hapd == idata->src_hapd)
+			continue;
+		if (os_memcmp(hapd->own_addr, idata->dst, ETH_ALEN) != 0)
+			continue;
+		for (piface = hapd->preauth_iface; piface;
+		     piface = piface->next) {
+			if (strcmp(piface->ifname, idata->dest_iface) != 0)
+				continue;
+			wpa_printf(MSG_DEBUG, "RSN: Send preauth data directly"
+				   " to locally managed BSS " MACSTR "@%s -> "
+				   MACSTR "@%s via %s",
+				   MAC2STR(idata->src_addr),
+				   idata->src_hapd->conf->iface,
+				   MAC2STR(hapd->own_addr), hapd->conf->iface,
+				   idata->dest_iface);
+			rsn_preauth_receive(piface, idata->src_addr,
+					    idata->data, idata->data_len);
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+static void rsn_preauth_snoop_from_sta(void *ctx, const u8 *src_addr,
+				       const u8 *buf, size_t len)
+{
+	struct rsn_preauth_copy_interface *l2ctx;
+	struct hostapd_data *hapd;
+	struct sta_info *sta;
+	struct l2_ethhdr *ethhdr;
+	struct rsn_preauth_iter_data idata;
+
+	l2ctx = (struct rsn_preauth_copy_interface*) ctx;
+	hapd = l2ctx->hapd;
+
+	if (!hapd->preauth_copy_iface)
+		return;
+
+	if (len < sizeof(*ethhdr))
+		return;
+	ethhdr = (struct l2_ethhdr *) buf;
+
+	sta = ap_get_sta(hapd, ethhdr->h_source);
+	if (!sta)
+		return;
+
+	wpa_printf(MSG_DEBUG, "RSN: preauth_snoop forward from sta " MACSTR
+		   " to ap " MACSTR " on from %s to %s",
+		   MAC2STR(ethhdr->h_source), MAC2STR(ethhdr->h_dest),
+		   l2ctx->ifname, hapd->preauth_copy_iface->ifname);
+
+	idata.src_hapd = hapd;
+	idata.dst = ethhdr->h_dest;
+	idata.data = buf;
+	idata.data_len = len;
+	idata.src_addr = src_addr;
+	idata.dest_iface = hapd->conf->rsn_preauth_copy_iface;
+	if (hapd->iface->interfaces->for_each_interface(
+	    hapd->iface->interfaces, rsn_preauth_iter,
+	    &idata))
+		return;
+	l2_snoop_send(hapd->preauth_copy_iface->l2, buf, len);
+}
+
+static void rsn_preauth_snoop_to_sta(void *ctx, const u8 *src_addr,
+				     const u8 *buf, size_t len)
+{
+	struct rsn_preauth_copy_interface *l2ctx;
+	struct hostapd_data *hapd;
+	struct rsn_preauth_copy_interface *destctx;
+	struct hostapd_vlan *vlan;
+	struct sta_info *sta;
+	struct l2_ethhdr *ethhdr;
+
+	l2ctx = (struct rsn_preauth_copy_interface*) ctx;
+	hapd = l2ctx->hapd;
+
+	if (!hapd->preauth_copy_iface)
+		return;
+
+	if (len < sizeof(*ethhdr))
+		return;
+	ethhdr = (struct l2_ethhdr *) buf;
+
+	sta = ap_get_sta(hapd, ethhdr->h_dest);
+	if (!sta)
+		return;
+
+	destctx = hapd->preauth_vlan0;
+#ifndef CONFIG_NO_VLAN
+	if (sta->vlan_id_bound) {
+		vlan = hapd->conf->vlan;
+		while (vlan) {
+			if (vlan->vlan_id == sta->vlan_id_bound)
+				break;
+			vlan = vlan->next;
+		}
+		if (!vlan)
+			return;
+		destctx = vlan->rsn_preauth;
+	}
+#endif /* CONFIG_NO_VLAN */
+	if (!destctx || !destctx->l2)
+		return;
+
+	wpa_printf(MSG_DEBUG, "RSN: preauth_snoop forward from ap " MACSTR 
+		   " to sta " MACSTR " if from %s to %s",
+		   MAC2STR(ethhdr->h_source), MAC2STR(ethhdr->h_dest),
+		   l2ctx->ifname, destctx->ifname);
+
+	l2_snoop_send(destctx->l2, buf, len);
+}
+#endif /* CONFIG_RSN_PREAUTH_COPY */
 
 #endif /* CONFIG_RSN_PREAUTH */
