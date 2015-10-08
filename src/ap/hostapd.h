@@ -161,6 +161,12 @@ struct hostapd_data {
 	struct eapol_authenticator *eapol_auth;
 
 	struct rsn_preauth_interface *preauth_iface;
+#ifdef CONFIG_RSN_PREAUTH_COPY
+	/* ctx for snoop preauth packets for STA on BSS preauth_copy_iface */
+	struct rsn_preauth_copy_interface *preauth_copy_iface;
+	/* ctx for snoop preauth packets from STA on BSS conf->iface */
+	struct rsn_preauth_copy_interface *preauth_vlan0;
+#endif
 	struct os_reltime michael_mic_failure;
 	int michael_mic_failures;
 	int tkip_countermeasures;

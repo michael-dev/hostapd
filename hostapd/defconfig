@@ -55,6 +55,9 @@ CONFIG_RSN_PREAUTH=y
 # see hostapd.conf
 # CONFIG_RSN_PREAUTH_MACVLAN=y
 
+# WPA2/IEEE 802.11i RSN pre-authentication full-dynamic packet copy
+# CONFIG_RSN_PREAUTH_COPY=y
+
 # PeerKey handshake for Station to Station Link (IEEE 802.11e DLS)
 CONFIG_PEERKEY=y
 
