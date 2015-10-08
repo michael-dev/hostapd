@@ -182,9 +182,9 @@ static int nl80211_send_frame_cmd(struct i802_bss *bss,
 static int wpa_driver_nl80211_probe_req_report(struct i802_bss *bss,
 					       int report);
 
-static void add_ifidx(struct wpa_driver_nl80211_data *drv, int ifidx);
-static void del_ifidx(struct wpa_driver_nl80211_data *drv, int ifidx);
-static int have_ifidx(struct wpa_driver_nl80211_data *drv, int ifidx);
+static void add_ifidx(struct wpa_driver_nl80211_data *drv, int ifidx, int ifidx_reason);
+static void del_ifidx(struct wpa_driver_nl80211_data *drv, int ifidx, int ifidx_reason);
+static int have_ifidx(struct wpa_driver_nl80211_data *drv, int ifidx, int ifidx_reason);
 
 static int nl80211_set_channel(struct i802_bss *bss,
 			       struct hostapd_freq_params *freq, int set_chan);
@@ -892,7 +892,7 @@ nl80211_find_drv(struct nl80211_global *global, int idx, u8 *buf, size_t len)
 	dl_list_for_each(drv, &global->interfaces,
 			 struct wpa_driver_nl80211_data, list) {
 		if (wpa_driver_nl80211_own_ifindex(drv, idx, buf, len) ||
-		    have_ifidx(drv, idx))
+		    have_ifidx(drv, idx, -1))
 			return drv;
 	}
 	return NULL;
@@ -1071,7 +1071,7 @@ static void wpa_driver_nl80211_event_rtm_newlink(void *ctx,
 		}
 		wpa_printf(MSG_DEBUG, "nl80211: Add ifindex %u for bridge %s",
 			   brid, namebuf);
-		add_ifidx(drv, brid);
+		add_ifidx(drv, brid, ifi->ifi_index);
 
 		for (bss = drv->first_bss; bss; bss = bss->next) {
 			if (os_strcmp(ifname, bss->ifname) == 0) {
@@ -1158,7 +1158,7 @@ static void wpa_driver_nl80211_event_rtm_dellink(void *ctx,
 				   "nl80211: Remove ifindex %u for bridge %s",
 				   brid, namebuf);
 		}
-		del_ifidx(drv, brid);
+		del_ifidx(drv, brid, ifi->ifi_index);
 	}
 }
 
@@ -1663,6 +1663,7 @@ static void * wpa_driver_nl80211_drv_init(void *ctx, const char *ifname,
 
 	drv->num_if_indices = sizeof(drv->default_if_indices) / sizeof(int);
 	drv->if_indices = drv->default_if_indices;
+	drv->if_indices_reason = drv->default_if_indices_reason;
 
 	drv->first_bss = os_zalloc(sizeof(*drv->first_bss));
 	if (!drv->first_bss) {
@@ -2343,6 +2344,9 @@ static void wpa_driver_nl80211_deinit(struct i802_bss *bss)
 
 	if (drv->if_indices != drv->default_if_indices)
 		os_free(drv->if_indices);
+
+	if (drv->if_indices_reason != drv->default_if_indices_reason)
+		os_free(drv->if_indices_reason);
 
 	if (drv->disabled_11b_rates)
 		nl80211_disable_11b_rates(drv, drv->ifindex, 0);
@@ -3963,7 +3967,10 @@ void nl80211_remove_iface(struct wpa_driver_nl80211_data *drv, int ifidx)
 	/* stop listening for EAPOL on this interface */
 	dl_list_for_each(drv2, &drv->global->interfaces,
 			 struct wpa_driver_nl80211_data, list)
-		del_ifidx(drv2, ifidx);
+	{
+		del_ifidx(drv2, ifidx, -1);
+		del_ifidx(drv2, -1, ifidx); /* all bridges learned for this if */
+	}
 
 	msg = nl80211_ifindex_msg(drv, ifidx, 0, NL80211_CMD_DEL_INTERFACE);
 	if (send_and_recv_msgs(drv, msg, NULL, NULL) == 0)
@@ -4071,7 +4078,7 @@ static int nl80211_create_iface_once(struct wpa_driver_nl80211_data *drv,
 	    iftype == NL80211_IFTYPE_WDS ||
 	    iftype == NL80211_IFTYPE_MONITOR) {
 		/* start listening for EAPOL on this interface */
-		add_ifidx(drv, ifidx);
+		add_ifidx(drv, ifidx, -1);
 	}
 
 	if (addr && iftype != NL80211_IFTYPE_MONITOR &&
@@ -5511,6 +5518,10 @@ static void dump_ifidx(struct wpa_driver_nl80211_data *drv)
 		if (os_snprintf_error(end - pos, res))
 			break;
 		pos += res;
+		res = os_snprintf(pos, end - pos, "(%d)", drv->if_indices_reason[i]);
+		if (os_snprintf_error(end - pos, res))
+			break;
+		pos += res;
 	}
 	*pos = '\0';
 
@@ -5519,14 +5530,14 @@ static void dump_ifidx(struct wpa_driver_nl80211_data *drv)
 }
 
 
-static void add_ifidx(struct wpa_driver_nl80211_data *drv, int ifidx)
+static void add_ifidx(struct wpa_driver_nl80211_data *drv, int ifidx, int ifidx_reason)
 {
 	int i;
-	int *old;
+	int *old, *old_reason;
 
 	wpa_printf(MSG_DEBUG, "nl80211: Add own interface ifindex %d",
 		   ifidx);
-	if (have_ifidx(drv, ifidx)) {
+	if (have_ifidx(drv, ifidx, ifidx_reason)) {
 		wpa_printf(MSG_DEBUG, "nl80211: ifindex %d already in the list",
 			   ifidx);
 		return;
@@ -5534,6 +5545,7 @@ static void add_ifidx(struct wpa_driver_nl80211_data *drv, int ifidx)
 	for (i = 0; i < drv->num_if_indices; i++) {
 		if (drv->if_indices[i] == 0) {
 			drv->if_indices[i] = ifidx;
+			drv->if_indices_reason[i] = ifidx_reason;
 			dump_ifidx(drv);
 			return;
 		}
@@ -5544,32 +5556,53 @@ static void add_ifidx(struct wpa_driver_nl80211_data *drv, int ifidx)
 	else
 		old = NULL;
 
+	if (drv->if_indices_reason != drv->default_if_indices_reason)
+		old_reason = drv->if_indices_reason;
+	else
+		old_reason = NULL;
+
 	drv->if_indices = os_realloc_array(old, drv->num_if_indices + 1,
+					   sizeof(int));
+	drv->if_indices_reason = os_realloc_array(old_reason, drv->num_if_indices + 1,
 					   sizeof(int));
 	if (!drv->if_indices) {
 		if (!old)
 			drv->if_indices = drv->default_if_indices;
 		else
 			drv->if_indices = old;
+	}
+	if (!drv->if_indices_reason) {
+		if (!old_reason)
+			drv->if_indices_reason = drv->default_if_indices_reason;
+		else
+			drv->if_indices = old_reason;
+	}
+	if (!drv->if_indices || !drv->if_indices_reason) {
 		wpa_printf(MSG_ERROR, "Failed to reallocate memory for "
 			   "interfaces");
 		wpa_printf(MSG_ERROR, "Ignoring EAPOL on interface %d", ifidx);
 		return;
-	} else if (!old)
+	}
+	if (!old)
 		os_memcpy(drv->if_indices, drv->default_if_indices,
 			  sizeof(drv->default_if_indices));
+	if (!old_reason)
+		os_memcpy(drv->if_indices_reason, drv->default_if_indices_reason,
+			  sizeof(drv->default_if_indices_reason));
 	drv->if_indices[drv->num_if_indices] = ifidx;
+	drv->if_indices_reason[drv->num_if_indices] = ifidx_reason;
 	drv->num_if_indices++;
 	dump_ifidx(drv);
 }
 
 
-static void del_ifidx(struct wpa_driver_nl80211_data *drv, int ifidx)
+static void del_ifidx(struct wpa_driver_nl80211_data *drv, int ifidx, int ifidx_reason)
 {
 	int i;
 
 	for (i = 0; i < drv->num_if_indices; i++) {
-		if (drv->if_indices[i] == ifidx) {
+		if ((drv->if_indices[i] == ifidx || ifidx == -1) &&
+		    (drv->if_indices_reason[i] == ifidx_reason || ifidx_reason == -1)) {
 			drv->if_indices[i] = 0;
 			break;
 		}
@@ -5578,12 +5611,12 @@ static void del_ifidx(struct wpa_driver_nl80211_data *drv, int ifidx)
 }
 
 
-static int have_ifidx(struct wpa_driver_nl80211_data *drv, int ifidx)
+static int have_ifidx(struct wpa_driver_nl80211_data *drv, int ifidx, int ifidx_reason)
 {
 	int i;
 
 	for (i = 0; i < drv->num_if_indices; i++)
-		if (drv->if_indices[i] == ifidx)
+		if (drv->if_indices[i] == ifidx && (drv->if_indices_reason[i] == ifidx_reason || ifidx_reason == -1))
 			return 1;
 
 	return 0;
@@ -5638,6 +5671,7 @@ static void handle_eapol(int sock, void *eloop_ctx, void *sock_ctx)
 	struct sockaddr_ll lladdr;
 	unsigned char buf[3000];
 	int len;
+	char namebuf[IFNAMSIZ];
 	socklen_t fromlen = sizeof(lladdr);
 
 	len = recvfrom(sock, buf, sizeof(buf), 0,
@@ -5647,8 +5681,10 @@ static void handle_eapol(int sock, void *eloop_ctx, void *sock_ctx)
 			   strerror(errno));
 		return;
 	}
+	os_memset(namebuf, 0, sizeof(namebuf));
+	if_indextoname(lladdr.sll_ifindex, namebuf);
 
-	if (have_ifidx(drv, lladdr.sll_ifindex))
+	if (have_ifidx(drv, lladdr.sll_ifindex, -1))
 		drv_event_eapol_rx(drv->ctx, lladdr.sll_addr, buf, len);
 }
 
@@ -5675,7 +5711,7 @@ static int i802_check_bridge(struct wpa_driver_nl80211_data *drv,
 		}
 		bss->added_bridge = 1;
 		br_ifindex = if_nametoindex(brname);
-		add_ifidx(drv, br_ifindex);
+		add_ifidx(drv, br_ifindex, drv->ifindex);
 	}
 	bss->br_ifindex = br_ifindex;
 
@@ -5737,7 +5773,7 @@ static void *i802_init(struct hostapd_data *hapd,
 		wpa_printf(MSG_DEBUG, "nl80211: Interface %s is in master %s",
 			params->ifname, master_ifname);
 		/* start listening for EAPOL on the master interface */
-		add_ifidx(drv, if_nametoindex(master_ifname));
+		add_ifidx(drv, if_nametoindex(master_ifname), drv->ifindex);
 	} else {
 		master_ifname[0] = '\0';
 	}
@@ -5748,14 +5784,14 @@ static void *i802_init(struct hostapd_data *hapd,
 		if (params->bridge[i]) {
 			ifindex = if_nametoindex(params->bridge[i]);
 			if (ifindex)
-				add_ifidx(drv, ifindex);
+				add_ifidx(drv, ifindex, drv->ifindex);
 			if (ifindex == br_ifindex)
 				br_added = 1;
 		}
 	}
 
 	/* start listening for EAPOL on the default AP interface */
-	add_ifidx(drv, drv->ifindex);
+	add_ifidx(drv, drv->ifindex, -1);
 
 	if (params->num_bridge && params->bridge[0]) {
 		if (i802_check_bridge(drv, bss, params->bridge[0],
@@ -5767,7 +5803,7 @@ static void *i802_init(struct hostapd_data *hapd,
 
 	if (!br_added && br_ifindex &&
 	    (params->num_bridge == 0 || !params->bridge[0]))
-		add_ifidx(drv, br_ifindex);
+		add_ifidx(drv, br_ifindex, drv->ifindex);
 
 #ifdef CONFIG_LIBNL3_ROUTE
 	if (bss->added_if_into_bridge) {
@@ -6052,7 +6088,7 @@ static int wpa_driver_nl80211_if_add(void *priv, enum wpa_driver_if_type type,
 	     nlmode == NL80211_IFTYPE_AP_VLAN ||
 	     nlmode == NL80211_IFTYPE_WDS ||
 	     nlmode == NL80211_IFTYPE_MONITOR))
-		add_ifidx(drv, ifidx);
+		add_ifidx(drv, ifidx, -1);
 
 	return 0;
 }
@@ -6073,7 +6109,10 @@ static int wpa_driver_nl80211_if_remove(struct i802_bss *bss,
 		struct wpa_driver_nl80211_data *drv2;
 		dl_list_for_each(drv2, &drv->global->interfaces,
 				 struct wpa_driver_nl80211_data, list)
-			del_ifidx(drv2, ifindex);
+		{
+			del_ifidx(drv2, ifindex, -1);
+			del_ifidx(drv2, -1, ifindex);
+		}
 	}
 
 	if (type != WPA_IF_AP_BSS)
