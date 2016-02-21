@@ -1154,6 +1154,41 @@ hostapd_wpa_auth_add_sta_auth(void *ctx, const u8 *sta_addr,
 
 	ieee802_1x_notify_pre_auth(sta->eapol_sm, 0);
 
+	/*
+	 * If the driver supports full AP client state, add a station to the
+	 * driver before sending authentication reply to make sure the driver
+	 * has resources, and not to go through the entire authentication and
+	 * association handshake, and fail it at the end.
+	 *
+	 * Additionally, this enables OVER_DS to configure station vlan early.
+	 */
+	if (FULL_AP_CLIENT_STATE_SUPP(hapd->iface->drv_flags) &&
+	    !(sta->added_unassoc)) {
+		/*
+		 * If a station that is already associated to the AP, is trying
+		 * to authenticate again, remove the STA entry, in order to make
+		 * sure the STA PS state gets cleared and configuration gets
+		 * updated. To handle this, station's added_unassoc flag is
+		 * cleared once the station has completed association.
+		 */
+		hostapd_drv_sta_remove(hapd, sta->addr);
+		sta->flags &= ~(WLAN_STA_ASSOC | WLAN_STA_AUTH |
+				WLAN_STA_AUTHORIZED |
+				WLAN_STA_PREAUTH_FT_OVER_DS);
+
+		if (hostapd_sta_add(hapd, sta->addr, 0, 0, NULL, 0, 0, NULL,
+				    NULL, NULL, 0, NULL, sta->flags, 0, 0, 0, 0)) {
+			hostapd_logger(hapd, sta->addr,
+				       HOSTAPD_MODULE_IEEE80211,
+				       HOSTAPD_LEVEL_NOTICE,
+				       "Could not add STA to kernel driver");
+			res = WLAN_STATUS_AP_UNABLE_TO_HANDLE_NEW_STA;
+			goto fail;
+		}
+
+		sta->added_unassoc = 1;
+	}
+
 	return 0;
 fail:
 	*sm = NULL;

@@ -1133,6 +1133,9 @@ skip_counting:
 		wpa_printf(MSG_INFO, "Failed to update VLAN-ID for WPA");
 
 	if (!(sta->flags & (WLAN_STA_AUTH | WLAN_STA_ASSOC)) &&
+	    /* configure VLAN w FT_OVER_DS roaming for fullmac drivers */
+	    !((sta->flags & WLAN_STA_PREAUTH_FT_OVER_DS) &&
+	      FULL_AP_CLIENT_STATE_SUPP(hapd->iface->drv_flags)) &&
 	    /* wired has no auth or assoc flag */
 	    !(hapd->iface->drv_flags & WPA_DRIVER_FLAGS_WIRED)) {
 		ret = -1;
