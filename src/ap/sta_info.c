@@ -994,7 +994,13 @@ skip_counting:
 	if (wpa_auth_sta_set_vlan(sta->wpa_sm, sta->vlan_id) < 0)
 		wpa_printf(MSG_INFO, "Failed to update VLAN-ID for WPA");
 
-	if (sta->flags & (WLAN_STA_AUTH | WLAN_STA_ASSOC)) {
+	/* if station is auth or assoc OR
+	 * if station is FT_OVER_DS preauth and FULL_AP_CLIENT_STATE supported
+	 * -> bind vlan
+	 */
+	if ((sta->flags & (WLAN_STA_AUTH | WLAN_STA_ASSOC)) ||
+	    ((sta->flags & WLAN_STA_PREAUTH_FT_OVER_DS) &&
+             FULL_AP_CLIENT_STATE_SUPP(hapd->iface->drv_flags))) {
 		ret = hostapd_drv_set_sta_vlan(iface, hapd, sta->addr,
 					       sta->vlan_id);
 		if (ret < 0)
