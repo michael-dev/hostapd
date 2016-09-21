@@ -20,6 +20,7 @@
 #include "ap/wpa_auth.h"
 #include "ap/ap_config.h"
 #include "config_file.h"
+#include "crypto/sha256.h"
 
 
 #ifndef CONFIG_NO_RADIUS
@@ -992,6 +993,24 @@ static int hostapd_config_tx_queue(struct hostapd_config *conf,
 
 
 #ifdef CONFIG_IEEE80211R
+static int rkh_dervice_key(struct ft_remote_key *rkey, const char *pos)
+{
+	u8 key[16];
+
+	if (hexstr2bin(pos, key, sizeof(key)))
+		return -1;
+
+	if (hmac_sha256_kdf(key, sizeof(key), "FT ENCRYPT", NULL, 0,
+			    rkey->encrypt, sizeof(rkey->encrypt)) < 0)
+		return -1;
+
+	if (hmac_sha256_kdf(key, sizeof(key), "FT MAC", NULL, 0,
+			    rkey->mac, sizeof(rkey->mac)) < 0)
+		wpa_printf(MSG_ERROR, "hmac_sha256_kdf failed");
+
+	return 0;
+}
+
 static int add_r0kh(struct hostapd_bss_config *bss, char *value)
 {
 	struct ft_remote_r0kh *r0kh;
@@ -1025,7 +1044,7 @@ static int add_r0kh(struct hostapd_bss_config *bss, char *value)
 	os_memcpy(r0kh->id, pos, r0kh->id_len);
 
 	pos = next;
-	if (hexstr2bin(pos, r0kh->key, sizeof(r0kh->key))) {
+	if (rkh_dervice_key(&r0kh->key, pos) < 0) {
 		wpa_printf(MSG_ERROR, "Invalid R0KH key: '%s'", pos);
 		os_free(r0kh);
 		return -1;
@@ -1070,7 +1089,7 @@ static int add_r1kh(struct hostapd_bss_config *bss, char *value)
 	}
 
 	pos = next;
-	if (hexstr2bin(pos, r1kh->key, sizeof(r1kh->key))) {
+	if (rkh_dervice_key(&r1kh->key, pos) < 0) {
 		wpa_printf(MSG_ERROR, "Invalid R1KH key: '%s'", pos);
 		os_free(r1kh);
 		return -1;
