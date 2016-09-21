@@ -789,7 +789,7 @@ static void hostapd_rrb_oui_receive(void *ctx, const u8 *src_addr,
 {
 	struct hostapd_data *hapd = ctx;
 
-	wpa_printf(MSG_DEBUG, "FT: RRB received packet " MACSTR " -> "
+	wpa_printf(MSG_DEBUG, "FT: RRB-OUI received packet " MACSTR " -> "
 		   MACSTR, MAC2STR(src_addr), MAC2STR(dst_addr));
 	if (!is_multicast_ether_addr(dst_addr) &&
 	    os_memcmp(hapd->own_addr, dst_addr, ETH_ALEN) != 0)
