@@ -38,75 +38,62 @@ struct ft_rrb_frame {
 #define FT_PACKET_REQUEST 0
 #define FT_PACKET_RESPONSE 1
 /* Vendor-specific types for R0KH-R1KH protocol; not defined in 802.11r */
-#define FT_PACKET_R0KH_R1KH_PULL 200
-#define FT_PACKET_R0KH_R1KH_RESP 201
-#define FT_PACKET_R0KH_R1KH_PUSH 202
+/* 200, 201 und 202 are reserved by old protocol version */
+#define FT_PACKET_R0KH_R1KH_PULL 203
+#define FT_PACKET_R0KH_R1KH_RESP 204
+#define FT_PACKET_R0KH_R1KH_PUSH 205
 
-#define FT_R0KH_R1KH_PULL_NONCE_LEN 16
-#define FT_R0KH_R1KH_PULL_DATA_LEN (FT_R0KH_R1KH_PULL_NONCE_LEN + \
-				    FT_R0KH_ID_MAX_LEN + 1 + \
-				    WPA_PMK_NAME_LEN + FT_R1KH_ID_LEN + \
-				    ETH_ALEN)
-#define FT_R0KH_R1KH_PULL_PAD_LEN ((8 - FT_R0KH_R1KH_PULL_DATA_LEN % 8) % 8)
 
-struct ft_r0kh_r1kh_pull_frame {
-	u8 frame_type; /* RSN_REMOTE_FRAME_TYPE_FT_RRB */
-	u8 packet_type; /* FT_PACKET_R0KH_R1KH_PULL */
-	le16 data_length; /* little endian length of data (44) */
-	u8 ap_address[ETH_ALEN];
+/* new packet format */
 
-	u8 nonce[FT_R0KH_R1KH_PULL_NONCE_LEN];
-	u8 r0kh_id[FT_R0KH_ID_MAX_LEN];
-	u8 r0kh_id_len;
-	u8 pmk_r0_name[WPA_PMK_NAME_LEN];
-	u8 r1kh_id[FT_R1KH_ID_LEN];
-	u8 s1kh_id[ETH_ALEN];
-	u8 pad[FT_R0KH_R1KH_PULL_PAD_LEN]; /* 8-octet boundary for AES block */
-	u8 key_wrap_extra[8];
+/* packet layout
+ *  | struct ft_rrb_frame | multiple of of struct ft_rrbv1_tlv |
+ *  | padding for encryption (blocksize) | 8 byte extra for keywrap |
+ * where
+ *  packet_type = FT_PACKET_R0KH_R1KH*
+ *  action_length = size of all struct ft_rrbv1_tlv (without final padding)
+ *                  (aka plaintext length)
+ *  encryption: covers everything after struct ft_rrb_frame
+ */
+
+#define FT_RRB_NONCE_LEN 16
+
+#define FT_RRB_LAST_EMPTY     0 /* placeholder */
+
+#define FT_RRB_NONCE          1 /* size FT_RRB_NONCE_LEN */
+#define FT_RRB_TIMESTAMP      2 /* le32 unix seconds */
+
+#define FT_RRB_R0KH_ID        3 /* FT_R0KH_ID_MAX_LEN */
+#define FT_RRB_R1KH_ID        4 /* FT_R1KH_ID_LEN */
+#define FT_RRB_S1KH_ID        5 /* ETH_ALEN */
+
+#define FT_RRB_PMK_R0_NAME    6 /* WPA_PMK_NAME_LEN */
+#define FT_RRB_PMK_R0         7 /* PMK_LEN */
+#define FT_RRB_PMK_R1_NAME    8 /* WPA_PMK_NAME_LEN */
+#define FT_RRB_PMK_R1         9 /* PMK_LEN */
+
+#define FT_RRB_PAIRWISE      10 /* le16 */
+
+struct ft_rrbv1_tlv {
+	le16 type;
+	le16 len;
+	/* followed by data of length len */
 } STRUCT_PACKED;
 
-#define FT_R0KH_R1KH_RESP_DATA_LEN (FT_R0KH_R1KH_PULL_NONCE_LEN + \
-				    FT_R1KH_ID_LEN + ETH_ALEN + PMK_LEN + \
-				    WPA_PMK_NAME_LEN + 2)
-#define FT_R0KH_R1KH_RESP_PAD_LEN ((8 - FT_R0KH_R1KH_RESP_DATA_LEN % 8) % 8)
-struct ft_r0kh_r1kh_resp_frame {
-	u8 frame_type; /* RSN_REMOTE_FRAME_TYPE_FT_RRB */
-	u8 packet_type; /* FT_PACKET_R0KH_R1KH_RESP */
-	le16 data_length; /* little endian length of data (78) */
-	u8 ap_address[ETH_ALEN];
-
-	u8 nonce[FT_R0KH_R1KH_PULL_NONCE_LEN]; /* copied from pull */
-	u8 r1kh_id[FT_R1KH_ID_LEN]; /* copied from pull */
-	u8 s1kh_id[ETH_ALEN]; /* copied from pull */
-	u8 pmk_r1[PMK_LEN];
-	u8 pmk_r1_name[WPA_PMK_NAME_LEN];
-	le16 pairwise; /* zero if no entry found */
-	u8 pad[FT_R0KH_R1KH_RESP_PAD_LEN]; /* 8-octet boundary for AES block */
-	u8 key_wrap_extra[8];
-} STRUCT_PACKED;
-
-#define FT_R0KH_R1KH_PUSH_DATA_LEN (4 + FT_R1KH_ID_LEN + ETH_ALEN + \
-				    WPA_PMK_NAME_LEN + PMK_LEN + \
-				    WPA_PMK_NAME_LEN + 2)
-#define FT_R0KH_R1KH_PUSH_PAD_LEN ((8 - FT_R0KH_R1KH_PUSH_DATA_LEN % 8) % 8)
-struct ft_r0kh_r1kh_push_frame {
-	u8 frame_type; /* RSN_REMOTE_FRAME_TYPE_FT_RRB */
-	u8 packet_type; /* FT_PACKET_R0KH_R1KH_PUSH */
-	le16 data_length; /* little endian length of data (82) */
-	u8 ap_address[ETH_ALEN];
-
-	/* Encrypted with AES key-wrap */
-	u8 timestamp[4]; /* current time in seconds since unix epoch, little
-			  * endian */
-	u8 r1kh_id[FT_R1KH_ID_LEN];
-	u8 s1kh_id[ETH_ALEN];
-	u8 pmk_r0_name[WPA_PMK_NAME_LEN];
-	u8 pmk_r1[PMK_LEN];
-	u8 pmk_r1_name[WPA_PMK_NAME_LEN];
-	le16 pairwise;
-	u8 pad[FT_R0KH_R1KH_PUSH_PAD_LEN]; /* 8-octet boundary for AES block */
-	u8 key_wrap_extra[8];
-} STRUCT_PACKED;
+/* session TLVs:
+ *   required: [PMK_R1, PMK_R1_NAME, PAIRWISE]
+ *
+ * pull frame TLVs:
+ *   required: NONCE, R0KH_ID, PMK_R0_NAME, R1KH_ID, S1KH_ID
+ *
+ * response frame TLVs:
+ *   required: NONCE, R1KH_ID, S1KH_ID,
+ *   optional: all session-TLVs
+ *
+ * push frame TLVs:
+ *   required: TIMESTAMP, R1KH_ID, S1KH_ID, PMK_R0_NAME,
+ *             session-TLVs
+ */
 
 #ifdef _MSC_VER
 #pragma pack(pop)
