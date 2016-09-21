@@ -998,6 +998,25 @@ def test_ap_ft_over_ds_pull_old_key(dev, apdev):
 
     run_roams(dev[0], apdev, hapd0, hapd1, ssid, passphrase, over_ds=True)
 
+def test_ap_ft_over_ds_pull_macaddr_radius(dev, apdev):
+    """WPA2-PSK-FT AP over DS (pull PMK) w macaddr_acl=RADIUS"""
+    ssid = "test-ft"
+    passphrase="12345678"
+
+    radius = hostapd.radius_params()
+    params = ft_params1(ssid=ssid, passphrase=passphrase)
+    params["pmk_r1_push"] = "0"
+    params["macaddr_acl"] = "2"
+    params = dict(radius.items() + params.items())
+    hapd0 = hostapd.add_ap(apdev[0]['ifname'], params)
+    params = ft_params2(ssid=ssid, passphrase=passphrase)
+    params["pmk_r1_push"] = "0"
+    params["macaddr_acl"] = "2"
+    params = dict(radius.items() + params.items())
+    hapd1 = hostapd.add_ap(apdev[1]['ifname'], params)
+
+    run_roams(dev[0], apdev, hapd0, hapd1, ssid, passphrase, over_ds=True)
+
 def test_ap_ft_over_ds_pull_vlan(dev, apdev):
     """WPA2-PSK-FT AP over DS (pull PMK) with VLAN"""
     ssid = "test-ft"
