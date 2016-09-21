@@ -54,9 +54,9 @@ def ft_params1a(rsn=True, ssid=None, passphrase=None):
 
 def ft_params1(rsn=True, ssid=None, passphrase=None):
     params = ft_params1a(rsn, ssid, passphrase)
-    params['r0kh'] = [ "02:00:00:00:03:00 nas1.w1.fi 100102030405060708090a0b0c0d0e0f",
-                       "02:00:00:00:04:00 nas2.w1.fi 300102030405060708090a0b0c0d0e0f" ]
-    params['r1kh'] = "02:00:00:00:04:00 00:01:02:03:04:06 200102030405060708090a0b0c0d0e0f"
+    params['r0kh'] = [ "02:00:00:00:03:00 nas1.w1.fi 100102030405060708090a0b0c0d0e0f100102030405060708090a0b0c0d0e0f",
+                       "02:00:00:00:04:00 nas2.w1.fi 300102030405060708090a0b0c0d0e0f300102030405060708090a0b0c0d0e0f" ]
+    params['r1kh'] = "02:00:00:00:04:00 00:01:02:03:04:06 200102030405060708090a0b0c0d0e0f200102030405060708090a0b0c0d0e0f"
     return params
 
 def ft_params2a(rsn=True, ssid=None, passphrase=None):
@@ -67,36 +67,36 @@ def ft_params2a(rsn=True, ssid=None, passphrase=None):
 
 def ft_params2(rsn=True, ssid=None, passphrase=None):
     params = ft_params2a(rsn, ssid, passphrase)
-    params['r0kh'] = [ "02:00:00:00:03:00 nas1.w1.fi 200102030405060708090a0b0c0d0e0f",
-                       "02:00:00:00:04:00 nas2.w1.fi 000102030405060708090a0b0c0d0e0f" ]
-    params['r1kh'] = "02:00:00:00:03:00 00:01:02:03:04:05 300102030405060708090a0b0c0d0e0f"
+    params['r0kh'] = [ "02:00:00:00:03:00 nas1.w1.fi 200102030405060708090a0b0c0d0e0f200102030405060708090a0b0c0d0e0f",
+                       "02:00:00:00:04:00 nas2.w1.fi 000102030405060708090a0b0c0d0e0f000102030405060708090a0b0c0d0e0f" ]
+    params['r1kh'] = "02:00:00:00:03:00 00:01:02:03:04:05 300102030405060708090a0b0c0d0e0f300102030405060708090a0b0c0d0e0f"
     return params
 
 def ft_params1_r0kh_mismatch(rsn=True, ssid=None, passphrase=None):
     params = ft_params(rsn, ssid, passphrase)
     params['nas_identifier'] = "nas1.w1.fi"
     params['r1_key_holder'] = "000102030405"
-    params['r0kh'] = [ "02:00:00:00:03:00 nas1.w1.fi 100102030405060708090a0b0c0d0e0f",
-                       "12:00:00:00:04:00 nas2.w1.fi 300102030405060708090a0b0c0d0e0f" ]
-    params['r1kh'] = "12:00:00:00:04:00 10:01:02:03:04:06 200102030405060708090a0b0c0d0e0f"
+    params['r0kh'] = [ "02:00:00:00:03:00 nas1.w1.fi 100102030405060708090a0b0c0d0e0f100102030405060708090a0b0c0d0e0f",
+                       "12:00:00:00:04:00 nas2.w1.fi 300102030405060708090a0b0c0d0e0f300102030405060708090a0b0c0d0e0f" ]
+    params['r1kh'] = "12:00:00:00:04:00 10:01:02:03:04:06 200102030405060708090a0b0c0d0e0f200102030405060708090a0b0c0d0e0f"
     return params
 
 def ft_params2_incorrect_rrb_key(rsn=True, ssid=None, passphrase=None):
     params = ft_params(rsn, ssid, passphrase)
     params['nas_identifier'] = "nas2.w1.fi"
     params['r1_key_holder'] = "000102030406"
-    params['r0kh'] = [ "02:00:00:00:03:00 nas1.w1.fi 200102030405060708090a0b0c0d0ef1",
-                       "02:00:00:00:04:00 nas2.w1.fi 000102030405060708090a0b0c0d0ef2" ]
-    params['r1kh'] = "02:00:00:00:03:00 00:01:02:03:04:05 300102030405060708090a0b0c0d0ef3"
+    params['r0kh'] = [ "02:00:00:00:03:00 nas1.w1.fi 200102030405060708090a0b0c0d0ef1200102030405060708090a0b0c0d0ef1",
+                       "02:00:00:00:04:00 nas2.w1.fi 000102030405060708090a0b0c0d0ef2000102030405060708090a0b0c0d0ef2" ]
+    params['r1kh'] = "02:00:00:00:03:00 00:01:02:03:04:05 300102030405060708090a0b0c0d0ef3300102030405060708090a0b0c0d0ef3"
     return params
 
 def ft_params2_r0kh_mismatch(rsn=True, ssid=None, passphrase=None):
     params = ft_params(rsn, ssid, passphrase)
     params['nas_identifier'] = "nas2.w1.fi"
     params['r1_key_holder'] = "000102030406"
-    params['r0kh'] = [ "12:00:00:00:03:00 nas1.w1.fi 200102030405060708090a0b0c0d0e0f",
-                       "02:00:00:00:04:00 nas2.w1.fi 000102030405060708090a0b0c0d0e0f" ]
-    params['r1kh'] = "12:00:00:00:03:00 10:01:02:03:04:05 300102030405060708090a0b0c0d0e0f"
+    params['r0kh'] = [ "12:00:00:00:03:00 nas1.w1.fi 200102030405060708090a0b0c0d0e0f200102030405060708090a0b0c0d0e0f",
+                       "02:00:00:00:04:00 nas2.w1.fi 000102030405060708090a0b0c0d0e0f000102030405060708090a0b0c0d0e0f" ]
+    params['r1kh'] = "12:00:00:00:03:00 10:01:02:03:04:05 300102030405060708090a0b0c0d0e0f300102030405060708090a0b0c0d0e0f"
     return params
 
 def run_roams(dev, apdev, hapd0, hapd1, ssid, passphrase, over_ds=False,
