@@ -16,7 +16,7 @@
 #include "vlan_util.h"
 
 
-int ifconfig_helper(const char *if_name, int up)
+static int ifconfig_helper(const char *if_name, int up)
 {
 	int fd;
 	struct ifreq ifr;
@@ -66,4 +66,11 @@ int ifconfig_up(const char *if_name)
 int iface_exists(const char *ifname)
 {
 	return if_nametoindex(ifname);
+}
+
+
+int ifconfig_down(const char *if_name)
+{
+	wpa_printf(MSG_DEBUG, "VLAN: Set interface %s down", if_name);
+	return ifconfig_helper(if_name, 0);
 }
