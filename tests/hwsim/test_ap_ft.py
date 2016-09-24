@@ -8,6 +8,7 @@ from remotehost import remote_compatible
 import binascii
 import os
 import time
+import subprocess
 import logging
 logger = logging.getLogger()
 import struct
@@ -17,6 +18,12 @@ import hostapd
 from utils import HwsimSkip, alloc_fail, fail_test, wait_fail_trigger, skip_with_fips, parse_ie
 from wlantest import Wlantest
 from test_ap_psk import check_mib, find_wpas_process, read_process_memory, verify_not_present, get_key_locations
+
+try:
+    import netifaces
+    netifaces_imported = True
+except ImportError:
+    netifaces_imported = False
 
 def ft_base_rsn():
     params = { "wpa": "2",
@@ -2044,3 +2051,35 @@ def test_ap_ft_reassoc_local_fail(dev, apdev):
         dev[0].request("DISCONNECT")
         if ev is None:
             raise Exception("Association reject not seen")
+
+def test_ap_ft_iface(dev, apdev):
+    """FT AP iface & macvlan"""
+    ssid = "test-ft"
+    passphrase="12345678"
+
+    try:
+        subprocess.call(['brctl', 'addbr', "brft"])
+        subprocess.call(['brctl', 'setfd', "brft", '0'])
+        subprocess.call(['ip', 'link', 'set', 'dev', "brft", 'up'])
+
+        params = ft_params1(ssid=ssid, passphrase=passphrase)
+        params["ft_iface"] = "brft"
+        hapd = hostapd.add_ap(apdev[0]['ifname'], params)
+
+        if netifaces_imported:
+            ifaces = netifaces.interfaces()
+            if not ("ftwlan3" in ifaces):
+                raise Exception("device ftwlan3 has not been created")
+
+        hapd.request("DISABLE")
+        time.sleep(5)
+
+        if netifaces_imported:
+            ifaces = netifaces.interfaces()
+            if "ftwlan3" in ifaces:
+                raise Exception("device ftwlan3 has not been cleaned up")
+    finally:
+        subprocess.call(['ip', 'link', 'set', 'dev', "brft", 'down'])
+        subprocess.call(['brctl', 'delbr', "brft"])
+        subprocess.call(['ifconfig', 'ftwlan3', 'down'])
+        subprocess.call(['ip', 'link', 'del', 'ftwlan3'])
