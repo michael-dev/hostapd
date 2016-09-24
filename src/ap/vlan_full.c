@@ -25,6 +25,7 @@
 #include "wpa_auth.h"
 #include "vlan_init.h"
 #include "vlan_util.h"
+#include "vlan_ifconfig.h"
 
 
 struct full_dynamic_vlan {
@@ -113,13 +114,6 @@ static int dyn_iface_put(struct hostapd_data *hapd, const char *ifname)
 	os_free(next);
 
 	return clean;
-}
-
-
-static int ifconfig_down(const char *if_name)
-{
-	wpa_printf(MSG_DEBUG, "VLAN: Set interface %s down", if_name);
-	return ifconfig_helper(if_name, 0);
 }
 
 

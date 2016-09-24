@@ -17,6 +17,7 @@
 #include "wpa_auth.h"
 #include "vlan_init.h"
 #include "vlan_util.h"
+#include "vlan_ifconfig.h"
 
 
 static int vlan_if_add(struct hostapd_data *hapd, struct hostapd_vlan *vlan,
