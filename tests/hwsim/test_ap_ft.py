@@ -317,6 +317,22 @@ def test_ap_ft_multi_akm(dev, apdev):
     dev[2].connect(ssid, psk=passphrase, key_mgmt="WPA-PSK-SHA256",
                    scan_freq="2412")
 
+def test_ap_ft_plaintext(dev, apdev):
+    """WPA2-PSK-FT AP w/o encryption"""
+    ssid = "test-ft"
+    passphrase="12345678"
+
+    params = ft_params1(ssid=ssid, passphrase=passphrase)
+    params["rkh_disable_encryption"] = "1"
+    hapd0 = hostapd.add_ap(apdev[0], params)
+    params = ft_params2_incorrect_rrb_key(ssid=ssid, passphrase=passphrase)
+    params["rkh_disable_encryption"] = "1"
+    hapd1 = hostapd.add_ap(apdev[1], params)
+
+    run_roams(dev[0], apdev, hapd0, hapd1, ssid, passphrase)
+    if "[WPA2-FT/PSK-CCMP]" not in dev[0].request("SCAN_RESULTS"):
+        raise Exception("Scan results missing RSN element info")
+
 def test_ap_ft_local_key_gen(dev, apdev):
     """WPA2-PSK-FT AP with local key generation (without pull/push)"""
     ssid = "test-ft"
