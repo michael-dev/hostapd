@@ -1712,6 +1712,10 @@ static int wpa_ft_pull_pmk_r1(struct wpa_state_machine *sm,
 			    sm->r0kh_id, sm->r0kh_id_len);
 		return -1;
 	}
+	if (sm->wpa_auth->conf.rkh_disable_encryption) {
+		key = NULL;
+		key_len = 0;
+	}
 
 	wpa_printf(MSG_DEBUG, "FT: Send pull request to remote R0KH address "
 		   MACSTR, MAC2STR(addr));
@@ -3075,6 +3079,11 @@ static int wpa_ft_rrb_rx_pull(struct wpa_authenticator *wpa_auth,
 	} else
 		goto out;
 
+	if (wpa_auth->conf.rkh_disable_encryption) {
+		key = NULL;
+		key_len = 0;
+	}
+
 	RRB_GET_AUTH(FT_RRB_NONCE, nonce, "pull request", FT_RRB_NONCE_LEN);
 	wpa_hexdump(MSG_DEBUG, "FT: nonce", f_nonce, f_nonce_len);
 
@@ -3224,6 +3233,11 @@ static int wpa_ft_rrb_rx_r1(struct wpa_authenticator *wpa_auth,
 		key_len = sizeof(r0kh_wildcard->key);
 	} else
 		goto out;
+
+	if (wpa_auth->conf.rkh_disable_encryption) {
+		key = NULL;
+		key_len = 0;
+	}
 
 	if (r0kh)
 		seq_ret = wpa_ft_rrb_seq_chk(&r0kh->seq, src_addr, enc, enc_len,
@@ -3529,6 +3543,11 @@ static int wpa_ft_rrb_rx_seq(struct wpa_authenticator *wpa_auth,
 				    f_r1kh_id, FT_R1KH_ID_LEN);
 			goto out;
 		}
+	}
+
+	if (wpa_auth->conf.rkh_disable_encryption) {
+		*key = NULL;
+		*key_len = 0;
 	}
 
 	if (wpa_ft_rrb_decrypt(*key, *key_len, enc, enc_len, auth, auth_len,
@@ -3884,6 +3903,13 @@ static int wpa_ft_generate_pmk_r1(struct wpa_authenticator *wpa_auth,
 	size_t packet_len;
 	struct ft_rrb_seq f_seq;
 	const u8 *mdid = wpa_auth->conf.mobility_domain;
+	const u8 *key = NULL;
+	size_t key_len = 0;
+
+	if (!wpa_auth->conf.rkh_disable_encryption) {
+		key = r1kh->key;
+		key_len = sizeof(r1kh->key);
+	}
 
 	if (wpa_ft_new_seq(wpa_auth, &f_seq) < 0) {
 		wpa_printf(MSG_DEBUG, "FT: Failed to get seq num");
@@ -3911,8 +3937,8 @@ static int wpa_ft_generate_pmk_r1(struct wpa_authenticator *wpa_auth,
 		{ .type = FT_RRB_LAST_EMPTY, .len = 0, .data = NULL },
 	};
 
-	if (wpa_ft_rrb_build_r0(r1kh->key, sizeof(r1kh->key), push, pmk_r0,
-				r1kh->id, s1kh_id, push_auth, wpa_auth->addr,
+	if (wpa_ft_rrb_build_r0(key, key_len, push, pmk_r0, r1kh->id, s1kh_id,
+				push_auth, wpa_auth->addr,
 				FT_PACKET_R0KH_R1KH_PUSH,
 				&packet, &packet_len) < 0)
 		return -1;
