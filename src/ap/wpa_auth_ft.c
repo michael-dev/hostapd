@@ -3047,6 +3047,7 @@ static int wpa_ft_rrb_rx_pull(struct wpa_authenticator *wpa_auth,
 	const struct wpa_ft_pmk_r0_sa *r0;
 	int ret = -1;
 	struct ft_rrb_seq f_seq;
+	const u8 *mdid = wpa_auth->conf.mobility_domain;
 
 	wpa_printf(MSG_DEBUG, "FT: Received %s from " MACSTR,
 		   msgtype, MAC2STR(src_addr));
@@ -3134,6 +3135,9 @@ static int wpa_ft_rrb_rx_pull(struct wpa_authenticator *wpa_auth,
 		  .data = f_r0kh_id },
 		{ .type = FT_RRB_R1KH_ID, .len = f_r1kh_id_len,
 		  .data = f_r1kh_id },
+		{ .type = FT_RRB_MOBILITY_DOMAIN,
+		  .len = MOBILITY_DOMAIN_ID_LEN,
+		  .data = mdid },
 		{ .type = FT_RRB_LAST_EMPTY, .len = 0, .data = NULL },
 	};
 
@@ -3185,15 +3189,18 @@ static int wpa_ft_rrb_rx_r1(struct wpa_authenticator *wpa_auth,
 	size_t f_r1kh_id_len, f_s1kh_id_len, f_r0kh_id_len;
 	const u8 *f_identity, *f_radius_cui;
 	const u8 *f_session_timeout;
+	const u8 *f_mobility_domain;
 	size_t f_pmk_r1_name_len, f_pairwise_len, f_pmk_r1_len;
 	size_t f_expires_in_len;
 	size_t f_identity_len, f_radius_cui_len;
 	size_t f_session_timeout_len;
+	size_t f_mobility_domain_len;
 	int pairwise;
 	int ret = -1;
 	int expires_in;
 	int session_timeout;
 	struct vlan_description vlan;
+	const u8 *mdid = wpa_auth->conf.mobility_domain;
 
 	RRB_GET_AUTH(FT_RRB_R0KH_ID, r0kh_id, msgtype, -1);
 	wpa_hexdump(MSG_DEBUG, "FT: R0KH-ID", f_r0kh_id, f_r0kh_id_len);
@@ -3265,6 +3272,17 @@ static int wpa_ft_rrb_rx_r1(struct wpa_authenticator *wpa_auth,
 
 	RRB_GET(FT_RRB_PMK_R1, pmk_r1, msgtype, PMK_LEN);
 	wpa_hexdump_key(MSG_DEBUG, "FT: PMK-R1", f_pmk_r1, PMK_LEN);
+
+	RRB_GET_OPTIONAL(FT_RRB_MOBILITY_DOMAIN, mobility_domain, msgtype,
+			 MOBILITY_DOMAIN_ID_LEN);
+	if (f_mobility_domain)
+		wpa_hexdump(MSG_DEBUG, "FT: Mobility Domain", f_mobility_domain,
+			    f_mobility_domain_len);
+	if (f_mobility_domain &&
+	    os_memcmp(mdid, f_mobility_domain, MOBILITY_DOMAIN_ID_LEN) != 0) {
+		wpa_printf(MSG_DEBUG, "FT: Mobility Domain does not match");
+		goto out;
+	}
 
 	pairwise = WPA_GET_LE16(f_pairwise);
 
@@ -3865,6 +3883,7 @@ static int wpa_ft_generate_pmk_r1(struct wpa_authenticator *wpa_auth,
 	u8 *packet;
 	size_t packet_len;
 	struct ft_rrb_seq f_seq;
+	const u8 *mdid = wpa_auth->conf.mobility_domain;
 
 	if (wpa_ft_new_seq(wpa_auth, &f_seq) < 0) {
 		wpa_printf(MSG_DEBUG, "FT: Failed to get seq num");
@@ -3876,6 +3895,9 @@ static int wpa_ft_generate_pmk_r1(struct wpa_authenticator *wpa_auth,
 		  .data = s1kh_id },
 		{ .type = FT_RRB_PMK_R0_NAME, .len = WPA_PMK_NAME_LEN,
 		  .data = pmk_r0->pmk_r0_name },
+		{ .type = FT_RRB_MOBILITY_DOMAIN,
+		  .len = MOBILITY_DOMAIN_ID_LEN,
+		  .data = mdid },
 		{ .type = FT_RRB_LAST_EMPTY, .len = 0, .data = NULL },
 	};
 	struct tlv_list push_auth[] = {
