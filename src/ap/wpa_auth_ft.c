@@ -2525,6 +2525,7 @@ static int wpa_ft_rrb_rx_pull(struct wpa_authenticator *wpa_auth,
 	size_t f_nonce_len, f_r0kh_id_len, f_r1kh_id_len, f_s1kh_id_len;
 	size_t f_pmk_r0_name_len;
 	const struct wpa_ft_pmk_r0_sa *r0;
+	const u8 *mdid = wpa_auth->conf.mobility_domain;
 
 	wpa_printf(MSG_DEBUG, "FT: Received PMK-R1 pull");
 
@@ -2589,6 +2590,9 @@ static int wpa_ft_rrb_rx_pull(struct wpa_authenticator *wpa_auth,
 		  .data = f_r1kh_id },
 		{ .type = FT_RRB_S1KH_ID, .len = f_s1kh_id_len,
 		  .data = f_s1kh_id },
+		{ .type = FT_RRB_MOBILITY_DOMAIN,
+		  .len = MOBILITY_DOMAIN_ID_LEN,
+		  .data = mdid },
 		{ .type = FT_RRB_LAST_EMPTY, .len = 0, .data = NULL },
 	};
 
@@ -2699,11 +2703,13 @@ static int wpa_ft_rrb_rx_r1(struct wpa_authenticator *wpa_auth,
 	const u8 *f_expires_in;
 	const u8 *f_identity, *f_radius_cui;
 	const u8 *f_session_timeout;
+	const u8 *f_mobility_domain;
 	size_t f_r1kh_id_len, f_s1kh_id_len;
 	size_t f_pmk_r1_name_len, f_pairwise_len, f_pmk_r1_len;
 	size_t f_expires_in_len;
 	size_t f_identity_len, f_radius_cui_len;
 	size_t f_session_timeout_len;
+	size_t f_mobility_domain_len;
 	int pairwise;
 	int ret = -1;
 	int expires_in;
@@ -2711,6 +2717,7 @@ static int wpa_ft_rrb_rx_r1(struct wpa_authenticator *wpa_auth,
 	int session_timeout;
 	struct vlan_description vlan;
 	char buf[256];
+	const u8 *mdid = wpa_auth->conf.mobility_domain;
 
 	RRB_GET(FT_RRB_R1KH_ID, r1kh_id, msgtype, FT_R1KH_ID_LEN);
 	if (os_memcmp_const(f_r1kh_id, wpa_auth->conf.r1_key_holder,
@@ -2737,6 +2744,21 @@ static int wpa_ft_rrb_rx_r1(struct wpa_authenticator *wpa_auth,
 	wpa_hexdump_key(MSG_DEBUG, "FT: PMK-R1", f_pmk_r1, PMK_LEN);
 	wpa_hexdump(MSG_DEBUG, "FT: PMKR1Name",
 		    f_pmk_r1_name, WPA_PMK_NAME_LEN);
+
+	RRB_GET_OPTIONAL(FT_RRB_MOBILITY_DOMAIN, mobility_domain, msgtype,
+			 MOBILITY_DOMAIN_ID_LEN);
+	if (f_mobility_domain) {
+		os_snprintf(buf, sizeof(buf), "FT: PMK-R1 %s - Mobility Domain",
+			    msgtype);
+		wpa_hexdump(MSG_DEBUG, buf, f_mobility_domain,
+			    f_mobility_domain_len);
+	}
+	if (f_mobility_domain &&
+	    os_memcmp(mdid, f_mobility_domain, MOBILITY_DOMAIN_ID_LEN) != 0) {
+		wpa_printf(MSG_DEBUG, "FT: PMK-R1 %s did not use a matching "
+			   "Mobility Domain", msgtype);
+		goto out;
+	}
 
 	pairwise = WPA_GET_LE16(f_pairwise);
 
@@ -3110,6 +3132,7 @@ static void wpa_ft_generate_pmk_r1(struct wpa_authenticator *wpa_auth,
 	u8 *packet;
 	size_t packet_len;
 	u8 f_timestamp[sizeof(le32)];
+	const u8 *mdid = wpa_auth->conf.mobility_domain;
 
 	os_get_time(&now);
 	WPA_PUT_LE32(f_timestamp, now.sec);
@@ -3123,6 +3146,9 @@ static void wpa_ft_generate_pmk_r1(struct wpa_authenticator *wpa_auth,
 		  .data = s1kh_id },
 		{ .type = FT_RRB_PMK_R0_NAME, .len = WPA_PMK_NAME_LEN,
 		  .data = pmk_r0->pmk_r0_name },
+		{ .type = FT_RRB_MOBILITY_DOMAIN,
+		  .len = MOBILITY_DOMAIN_ID_LEN,
+		  .data = mdid },
 		{ .type = FT_RRB_LAST_EMPTY, .len = 0, .data = NULL },
 	};
 
