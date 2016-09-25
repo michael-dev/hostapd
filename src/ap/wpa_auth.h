@@ -83,6 +83,7 @@ struct ft_rrb_frame {
 #define FT_RRB_IDENTITY      14
 #define FT_RRB_RADIUS_CUI    15
 #define FT_RRB_SESSION_TIMEOUT  16 /* le32 seconds */
+#define FT_RRB_MOBILITY_DOMAIN  17 /* MOBILITY_DOMAIN_ID_LEN */
 
 struct ft_rrbv1_tlv {
 	le16 type;
