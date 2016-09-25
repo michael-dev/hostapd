@@ -62,8 +62,13 @@ static int wpa_ft_rrb_decrypt(const u8 *kek, size_t kek_len,
 	f = (struct ft_rrb_frame *) data;
 
 	alen = le_to_host16(f->action_length); /* plaintext length */
-	blen = alen + ((8 - (alen % 8)) % 8); /* round up to full block size */
-	clen = blen + 8; /* extra space for keywrap */
+	if (kek) {
+		blen = alen + ((8 - (alen % 8)) % 8); /* round up to block */
+		clen = blen + 8; /* extra space for keywrap */
+	} else { /* not encrypted */
+		blen = alen;
+		clen = alen;
+	}
 
 	/* ciphertext (packet) long enough for given plaintext length? */
 	if (data_len - sizeof(*f) < clen)
@@ -74,7 +79,11 @@ static int wpa_ft_rrb_decrypt(const u8 *kek, size_t kek_len,
 	if (!*plain)
 		return -1;
 
-	if (!aes_unwrap(kek, kek_len, blen / 8, crypt, *plain)) {
+	if (kek && !aes_unwrap(kek, kek_len, blen / 8, crypt, *plain)) {
+		*plain_size = alen;
+		return 0;
+	} else if (!kek) {
+		os_memcpy(*plain, crypt, alen);
 		*plain_size = alen;
 		return 0;
 	}
@@ -361,7 +370,10 @@ static int wpa_ft_rrb_build(const u8 *kek, size_t kek_len,
 	tlv_len += wpa_ft_tlv_len(tlvs1);
 	tlv_len += wpa_ft_tlv_len(tlvs2);
 	tlv_len += wpa_ft_vlan_len(vlan);
-	pad_len = (8 - (tlv_len % 8)) % 8;
+	if (kek)
+		pad_len = (8 - (tlv_len % 8)) % 8;
+	else
+		pad_len = 0;
 
 	plain  = os_zalloc(tlv_len + pad_len);
 	if (plain == NULL)
@@ -380,7 +392,10 @@ static int wpa_ft_rrb_build(const u8 *kek, size_t kek_len,
 		return -1;
 	}
 
-	*packet_len = sizeof(*frame) + tlv_len + pad_len + 8;
+	if (kek)
+		*packet_len = sizeof(*frame) + tlv_len + pad_len + 8;
+	else
+		*packet_len = sizeof(*frame) + tlv_len + pad_len;
 	*packet = os_zalloc(*packet_len);
 	if (*packet == NULL) {
 		*packet_len = 0;
@@ -394,7 +409,11 @@ static int wpa_ft_rrb_build(const u8 *kek, size_t kek_len,
 
 	crypt = *packet + sizeof(*frame);
 
-	if (!aes_wrap(kek, kek_len, (tlv_len + 7) / 8, plain, crypt)) {
+	if (kek && !aes_wrap(kek, kek_len, (tlv_len + 7) / 8, plain, crypt)) {
+		os_free(plain);
+		return 0;
+	} else if (!kek) {
+		os_memcpy(crypt, plain, tlv_len);
 		os_free(plain);
 		return 0;
 	}
@@ -1133,6 +1152,8 @@ static int wpa_ft_pull_pmk_r1(struct wpa_state_machine *sm,
 	size_t packet_len;
 	int tsecs, tusecs, first;
 	struct wpabuf *ft_pending_req_ies;
+	const u8 *kek;
+	size_t kek_len;
 
 	if (sm->ft_pending_pull_left_retries <= 0)
 		return -1;
@@ -1166,6 +1187,14 @@ static int wpa_ft_pull_pmk_r1(struct wpa_state_machine *sm,
 			    sm->r0kh_id, sm->r0kh_id_len);
 		return -1;
 	}
+	if (!sm->wpa_auth->conf.rkh_disable_encryption) {
+		kek = r0kh->key;
+		kek_len = sizeof(r0kh->key);
+	} else {
+		kek = NULL;
+		kek_len = 0;
+	}
+
 
 	wpa_printf(MSG_DEBUG, "FT: Send PMK-R1 pull request to remote R0KH "
 		   "address " MACSTR, MAC2STR(r0kh->addr));
@@ -1196,8 +1225,8 @@ static int wpa_ft_pull_pmk_r1(struct wpa_state_machine *sm,
 		{ .type = FT_RRB_LAST_EMPTY, .len = 0, .data = NULL },
 	};
 
-	if (wpa_ft_rrb_build(r0kh->key, sizeof(r0kh->key), &req_hdr,
-			     req_tlv, NULL, NULL, &packet, &packet_len) < 0) {
+	if (wpa_ft_rrb_build(kek, kek_len, &req_hdr, req_tlv, NULL, NULL,
+			     &packet, &packet_len) < 0) {
 		return -1;
 	}
 
@@ -2483,6 +2512,8 @@ static int wpa_ft_rrb_rx_pull(struct wpa_authenticator *wpa_auth,
 	size_t f_pmk_r0_name_len;
 	const struct wpa_ft_pmk_r0_sa *r0;
 	const u8 *mdid = wpa_auth->conf.mobility_domain;
+	const u8 *kek;
+	size_t kek_len;
 
 	wpa_printf(MSG_DEBUG, "FT: Received PMK-R1 pull request");
 
@@ -2508,9 +2539,16 @@ static int wpa_ft_rrb_rx_pull(struct wpa_authenticator *wpa_auth,
 			   MAC2STR(src_addr));
 		return -1;
 	}
+	if (!wpa_auth->conf.rkh_disable_encryption) {
+		kek = r1kh->key;
+		kek_len = sizeof(r1kh->key);
+	} else {
+		kek = NULL;
+		kek_len = 0;
+	}
 
-	if (wpa_ft_rrb_decrypt(r1kh->key, sizeof(r1kh->key),
-			       data, data_len, &plain, &plain_len) < 0) {
+	if (wpa_ft_rrb_decrypt(kek, kek_len, data, data_len, &plain,
+			       &plain_len) < 0) {
 		wpa_printf(MSG_DEBUG, "FT: Failed to decrypt PMK-R1 pull "
 			   "request from " MACSTR, MAC2STR(src_addr));
 		return -1;
@@ -2562,9 +2600,8 @@ static int wpa_ft_rrb_rx_pull(struct wpa_authenticator *wpa_auth,
 		wpa_printf(MSG_DEBUG, "FT: No matching PMK-R0-Name found for "
 			   "PMK-R1 pull request");
 
-	ret = wpa_ft_rrb_build_r0(r1kh->key, sizeof(r1kh->key), &resp_hdr,
-				  resp_tlv, r0, f_r1kh_id, f_s1kh_id,
-				  &packet, &packet_len);
+	ret = wpa_ft_rrb_build_r0(kek, kek_len, &resp_hdr, resp_tlv, r0,
+				  f_r1kh_id, f_s1kh_id, &packet, &packet_len);
 
 	if (!ret)
 		wpa_ft_rrb_send(wpa_auth, src_addr, packet, packet_len);
@@ -2796,6 +2833,8 @@ static int wpa_ft_rrb_rx_resp(struct wpa_authenticator *wpa_auth,
 	struct ft_pull_resp_cb_ctx ctx;
 	const u8 *f_nonce, *f_s1kh_id;
 	size_t f_nonce_len, f_s1kh_id_len;
+	const u8 *kek;
+	size_t kek_len;
 
 	wpa_printf(MSG_DEBUG, "FT: Received PMK-R1 pull response");
 
@@ -2820,9 +2859,17 @@ static int wpa_ft_rrb_rx_resp(struct wpa_authenticator *wpa_auth,
 			   MAC2STR(src_addr));
 		return -1;
 	}
+	if (!wpa_auth->conf.rkh_disable_encryption) {
+		kek = r0kh->key;
+		kek_len = sizeof(r0kh->key);
+	} else {
+		kek = NULL;
+		kek_len = 0;
+	}
 
-	if (wpa_ft_rrb_decrypt(r0kh->key, sizeof(r0kh->key),
-			       data, data_len, &plain, &plain_len) < 0) {
+
+	if (wpa_ft_rrb_decrypt(kek, kek_len, data, data_len, &plain,
+			       &plain_len) < 0) {
 		wpa_printf(MSG_DEBUG, "FT: Failed to decrypt PMK-R1 pull "
 			   "response from " MACSTR, MAC2STR(src_addr));
 		return -1;
@@ -2880,6 +2927,8 @@ static int wpa_ft_rrb_rx_push(struct wpa_authenticator *wpa_auth,
 	os_time_t tsend;
 	const u8 *f_timestamp;
 	size_t f_timestamp_len;
+	const u8 *kek;
+	size_t kek_len;
 
 	wpa_printf(MSG_DEBUG, "FT: Received PMK-R1 push");
 
@@ -2903,9 +2952,17 @@ static int wpa_ft_rrb_rx_push(struct wpa_authenticator *wpa_auth,
 			   MAC2STR(src_addr));
 		return -1;
 	}
+	if (!wpa_auth->conf.rkh_disable_encryption) {
+		kek = r0kh->key;
+		kek_len = sizeof(r0kh->key);
+	} else {
+		kek = NULL;
+		kek_len = 0;
+	}
 
-	if (wpa_ft_rrb_decrypt(r0kh->key, sizeof(r0kh->key),
-			       data, data_len, &plain, &plain_len) < 0) {
+
+	if (wpa_ft_rrb_decrypt(kek, kek_len, data, data_len, &plain,
+			       &plain_len) < 0) {
 		wpa_printf(MSG_DEBUG, "FT: Failed to decrypt PMK-R1 push from "
 			   MACSTR, MAC2STR(src_addr));
 		return -1;
@@ -3073,6 +3130,16 @@ static void wpa_ft_generate_pmk_r1(struct wpa_authenticator *wpa_auth,
 	size_t packet_len;
 	u8 f_timestamp[sizeof(le32)];
 	const u8 *mdid = wpa_auth->conf.mobility_domain;
+	const u8 *kek;
+	size_t kek_len;
+
+	if (!wpa_auth->conf.rkh_disable_encryption) {
+		kek = r1kh->key;
+		kek_len = sizeof(r1kh->key);
+	} else {
+		kek = NULL;
+		kek_len = 0;
+	}
 
 	os_memset(&push_hdr, 0, sizeof(push_hdr));
 	push_hdr.frame_type = RSN_REMOTE_FRAME_TYPE_FT_RRB;
@@ -3097,9 +3164,8 @@ static void wpa_ft_generate_pmk_r1(struct wpa_authenticator *wpa_auth,
 		{ .type = FT_RRB_LAST_EMPTY, .len = 0, .data = NULL },
 	};
 
-	if (wpa_ft_rrb_build_r0(r1kh->key, sizeof(r1kh->key), &push_hdr,
-				push_tlv, pmk_r0, r1kh->id, s1kh_id,
-				&packet, &packet_len) < 0)
+	if (wpa_ft_rrb_build_r0(kek, kek_len, &push_hdr, push_tlv, pmk_r0,
+				r1kh->id, s1kh_id, &packet, &packet_len) < 0)
 		return;
 
 	wpa_ft_rrb_send(wpa_auth, r1kh->addr, packet, packet_len);
