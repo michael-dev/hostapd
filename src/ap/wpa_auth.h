@@ -87,6 +87,7 @@ struct ft_rrb_frame {
 #define FT_RRB_IDENTITY      15
 #define FT_RRB_RADIUS_CUI    16
 #define FT_RRB_SESSION_TIMEOUT  17 /* le32 seconds */
+#define FT_RRB_MOBILITY_DOMAIN  18 /* MOBILITY_DOMAIN_ID_LEN */
 
 struct ft_rrb_tlv {
 	le16 type;
@@ -103,7 +104,7 @@ struct ft_rrb_seq {
 /* session TLVs:
  *   required: PMK_R1, PMK_R1_NAME, PAIRWISE
  *   optional: VLAN_UNTAGGED, VLAN_TAGGED, EXPIRES_IN, IDENTITY, RADIUS_CUI,
- *		 SESSION_TIMEOUT
+ *		 SESSION_TIMEOUT, MOBILITY_DOMAIN
  *
  * pull frame TLVs:
  *   auth:
