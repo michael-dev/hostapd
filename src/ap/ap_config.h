@@ -404,6 +404,7 @@ struct hostapd_bss_config {
 	u8 mobility_domain[MOBILITY_DOMAIN_ID_LEN];
 	u8 r1_key_holder[FT_R1KH_ID_LEN];
 	u32 r0_key_lifetime; /* PMK-R0 lifetime seconds */
+	int rkh_disable_encryption:1;
 	int rkh_pos_timeout;
 	int rkh_neg_timeout;
 	int rkh_pull_timeout; /* ms */
