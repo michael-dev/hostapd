@@ -3036,6 +3036,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		bss->r1_max_key_lifetime = atoi(pos);
 	} else if (os_strcmp(buf, "reassociation_deadline") == 0) {
 		bss->reassociation_deadline = atoi(pos);
+	} else if (os_strcmp(buf, "rkh_disable_encryption") == 0) {
+		bss->rkh_disable_encryption = atoi(pos);
 	} else if (os_strcmp(buf, "rkh_pos_timeout") == 0) {
 		bss->rkh_pos_timeout = atoi(pos);
 	} else if (os_strcmp(buf, "rkh_neg_timeout") == 0) {
