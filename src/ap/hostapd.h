@@ -56,6 +56,9 @@ struct hapd_interfaces {
 #ifdef CONFIG_ETH_P_OUI
 	struct dl_list eth_p_oui; /* OUI Extended EtherType handlers */
 #endif /* CONFIG_ETH_P_OUI */
+#ifdef CONFIG_NEED_MACVLAN
+	struct macvlan_iface *macvlan_priv;
+#endif /* CONFIG_NEED_MACVLAN */
 	int eloop_initialized;
 };
 
