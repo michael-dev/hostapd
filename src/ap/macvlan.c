@@ -7,16 +7,109 @@
  */
 
 #include "utils/includes.h"
-
 #include "utils/common.h"
+#include "hostapd.h"
 
 #ifdef CONFIG_LIBNL3_ROUTE
 #include <netlink/route/link.h>
 #include <netlink/route/link/macvlan.h>
+#endif /* CONFIG_LIBNL3_ROUTE */
+
 #include "macvlan.h"
 
 
-int macvlan_add(const char *if_name, const u8 *addr, const char *if_base)
+struct macvlan_iface {
+	char if_name[IFNAMSIZ + 1];
+	char if_base[IFNAMSIZ + 1];
+	u8 addr[ETH_ALEN];
+	int usage;
+	struct macvlan_iface *next;
+};
+
+
+/* Increment ref counter for if_name */
+static struct macvlan_iface * macvlan_list_get(struct hostapd_data *hapd,
+					       const char *if_base,
+					       const u8 *addr)
+{
+	struct macvlan_iface *next, **macvlan_ifaces;
+	struct hapd_interfaces *interfaces;
+
+	interfaces = hapd->iface->interfaces;
+	macvlan_ifaces = &interfaces->macvlan_priv;
+
+	for (next = *macvlan_ifaces; next; next = next->next) {
+		if (os_strcmp(if_base, next->if_base) == 0 &&
+		    os_memcmp(addr, next->addr, sizeof(next->addr)) == 0)
+			break;
+	}
+
+	if (next)
+		next->usage++;
+
+	return next;
+}
+
+
+static void macvlan_list_add(struct hostapd_data *hapd, const char *if_name,
+			     const char *if_base, const u8 *addr)
+{
+	struct macvlan_iface *next, **macvlan_ifaces;
+	struct hapd_interfaces *interfaces;
+
+	interfaces = hapd->iface->interfaces;
+	macvlan_ifaces = &interfaces->macvlan_priv;
+
+	next = os_zalloc(sizeof(*next));
+	if (!next)
+		return;
+
+	os_strlcpy(next->if_name, if_name, sizeof(next->if_name));
+	os_strlcpy(next->if_base, if_base, sizeof(next->if_base));
+	os_memcpy(next->addr, addr, sizeof(next->addr));
+	next->usage = 1;
+	next->next = *macvlan_ifaces;
+	*macvlan_ifaces = next;
+}
+
+
+/* Decrement reference counter for given if_name.
+ * Return 1 iff reference counter was decreased to zero, else zero
+ */
+static int macvlan_list_put(struct hostapd_data *hapd, const char *if_name)
+{
+	struct macvlan_iface *next, *prev = NULL, **macvlan_ifaces;
+	struct hapd_interfaces *interfaces;
+
+	interfaces = hapd->iface->interfaces;
+	macvlan_ifaces = &interfaces->macvlan_priv;
+
+	for (next = *macvlan_ifaces; next; next = next->next) {
+		if (os_strcmp(if_name, next->if_name) == 0)
+			break;
+		prev = next;
+	}
+
+	if (!next)
+		return 0;
+
+	next->usage--;
+	if (next->usage)
+		return 0;
+
+	if (prev)
+		prev->next = next->next;
+	else
+		*macvlan_ifaces = next->next;
+	os_free(next);
+
+	return 1;
+}
+
+
+#ifdef CONFIG_LIBNL3_ROUTE
+static int macvlan_iface_add(const char *if_name, const u8 *addr,
+			     const char *if_base)
 {
 	int err;
 	struct rtnl_link *link = NULL;
@@ -88,13 +181,14 @@ macvlan_add_error:
 }
 
 
-int macvlan_del(const char *if_name)
+static int macvlan_iface_del(const char *if_name)
 {
 	int ret = -1;
 	struct nl_sock *handle = NULL;
 	struct rtnl_link *rlink = NULL;
 
-	wpa_printf(MSG_DEBUG, "MACVLAN: macvlan_del(if_name=%s)", if_name);
+	wpa_printf(MSG_DEBUG, "MACVLAN: macvlan_iface_del(if_name=%s)",
+		   if_name);
 
 	handle = nl_socket_alloc();
 	if (!handle) {
@@ -130,3 +224,42 @@ macvlan_del_error:
 	return ret;
 }
 #endif /* CONFIG_LIBNL3_ROUTE */
+
+
+/* create or reuse macvlan interface
+ * @param if_name proposed name, may be altered if required
+ * @param addr mac-address
+ * @param if_base macvlan lowerdev
+ *
+ * @returns 0 on success, negative error code else
+ */
+int macvlan_add(struct hostapd_data *hapd, char *if_name, size_t len,
+		const u8 *addr, const char *if_base)
+{
+	struct macvlan_iface *info;
+	int ret;
+
+	info = macvlan_list_get(hapd, if_base, addr);
+
+	if (info) {
+		os_strlcpy(if_name, info->if_name, len);
+		return 0;
+	}
+
+	ret = macvlan_iface_add(if_name, addr, if_base);
+	if (ret == 0)
+		macvlan_list_add(hapd, if_name, if_base, addr);
+
+	return ret;
+}
+
+
+int macvlan_del(struct hostapd_data *hapd, const char *if_name)
+{
+	wpa_printf(MSG_DEBUG, "MACVLAN: macvlan_del(if_name=%s)", if_name);
+
+	if (macvlan_list_put(hapd, if_name))
+		return macvlan_iface_del(if_name);
+	else
+		return 0;
+}

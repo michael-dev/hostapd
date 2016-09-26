@@ -1323,7 +1323,9 @@ int hostapd_setup_wpa(struct hostapd_data *hapd)
 			snprintf(hapd->conf->ft_macvlan,
 				 sizeof(hapd->conf->ft_macvlan),
 				 "ft%s", hapd->conf->iface);
-			if (macvlan_add(hapd->conf->ft_macvlan,
+			if (macvlan_add(hapd,
+					hapd->conf->ft_macvlan,
+					sizeof(hapd->conf->ft_macvlan),
 					hapd->own_addr,	ft_iface) < 0 ||
 			    ifconfig_up(hapd->conf->ft_macvlan) < 0) {
 				wpa_printf(MSG_ERROR, "Failed to add bssid to "
@@ -1393,7 +1395,7 @@ void hostapd_deinit_wpa(struct hostapd_data *hapd)
 #ifdef CONFIG_IEEE80211R_MACVLAN
 	if (hapd->conf->ft_macvlan[0]) {
 		ifconfig_down(hapd->conf->ft_macvlan);
-		macvlan_del(hapd->conf->ft_macvlan);
+		macvlan_del(hapd, hapd->conf->ft_macvlan);
 	}
 #endif /* CONFIG_IEEE80211R_MACVLAN */
 	eloop_cancel_timeout(hostapd_wpa_ft_rrb_rx_later, hapd, ELOOP_ALL_CTX);
