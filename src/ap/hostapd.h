@@ -53,6 +53,9 @@ struct hapd_interfaces {
 #ifndef CONFIG_NO_VLAN
 	struct dynamic_iface *vlan_priv;
 #endif /* CONFIG_NO_VLAN */
+#ifdef CONFIG_NEED_MACVLAN
+	struct macvlan_iface *macvlan_priv;
+#endif /* CONFIG_NEED_MACVLAN */
 	int eloop_initialized;
 };
 
