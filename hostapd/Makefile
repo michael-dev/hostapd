@@ -955,6 +955,7 @@ endif
 ifdef NEED_MACVLAN
 ifdef CONFIG_LIBNL32
 ifdef CONFIG_LIBNL3_ROUTE
+CFLAGS += -DCONFIG_NEED_MACVLAN
 OBJS += ../src/ap/macvlan.o
 LIBS += -lnl-3
 LIBS += -lnl-genl-3
