@@ -140,7 +140,8 @@ static int rsn_preauth_iface_add(struct hostapd_data *hapd, const char *ifname,
 #ifdef CONFIG_RSN_PREAUTH_MACVLAN
 	snprintf(macvlan_iface, sizeof(macvlan_iface), "pre%d%s",
 		 idx, hapd->conf->iface);
-	if (macvlan_add(macvlan_iface, hapd->own_addr, ifname) < 0 ||
+	if (macvlan_add(hapd, macvlan_iface, sizeof(macvlan_iface),
+			hapd->own_addr, ifname) < 0 ||
 	    ifconfig_up(macvlan_iface) < 0) {
 		wpa_printf(MSG_ERROR, "Failed to add bssid to "
 			   "rsn_preauth_interface %s", ifname);
@@ -188,7 +189,7 @@ void rsn_preauth_iface_deinit(struct hostapd_data *hapd)
 #ifdef CONFIG_RSN_PREAUTH_MACVLAN
 		if (prev->is_macvlan) {
 			ifconfig_down(prev->ifname);
-			macvlan_del(prev->ifname);
+			macvlan_del(hapd, prev->ifname);
 		}
 #endif /* CONFIG_RSN_PREAUTH_MACVLAN */
 		l2_packet_deinit(prev->l2);
