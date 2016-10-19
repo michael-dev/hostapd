@@ -17,6 +17,7 @@
 #include "eapol_auth/eapol_auth_sm_i.h"
 #include "eap_server/eap.h"
 #include "l2_packet/l2_packet.h"
+#include "eth_p_oui.h"
 #include "hostapd.h"
 #include "ieee802_1x.h"
 #include "preauth_auth.h"
@@ -467,7 +468,8 @@ static int hostapd_wpa_auth_send_ether(void *ctx, const u8 *dst, u16 proto,
 #endif /* CONFIG_TESTING_OPTIONS */
 
 #ifdef CONFIG_IEEE80211R
-	if (proto == ETH_P_RRB && hapd->iface->interfaces &&
+	if (proto == ETH_P_RRB &&
+	    hapd->iface->interfaces &&
 	    hapd->iface->interfaces->for_each_interface) {
 		int res;
 		struct wpa_auth_ft_iface_iter_data idata;
@@ -487,6 +489,7 @@ static int hostapd_wpa_auth_send_ether(void *ctx, const u8 *dst, u16 proto,
 		return hapd->driver->send_ether(hapd->drv_priv, dst,
 						hapd->own_addr, proto,
 						data, data_len);
+
 	if (hapd->l2 == NULL)
 		return -1;
 
@@ -501,6 +504,103 @@ static int hostapd_wpa_auth_send_ether(void *ctx, const u8 *dst, u16 proto,
 			     sizeof(*buf) + data_len);
 	os_free(buf);
 	return ret;
+}
+
+
+struct wpa_auth_oui_iface_iter_data {
+	struct hostapd_data *src_hapd;
+	const u8 *dst;
+	const u8 *data;
+	size_t data_len;
+	u8 ouisuffix;
+};
+
+
+static int hostapd_wpa_auth_oui_iter(struct hostapd_iface *iface, void *ctx)
+{
+	struct wpa_auth_oui_iface_iter_data *idata = ctx;
+	struct hostapd_data *hapd;
+	struct eth_p_oui_ctx *oui_ctx;
+	size_t j;
+
+	for (j = 0; j < iface->num_bss; j++) {
+		hapd = iface->bss[j];
+		if (hapd == idata->src_hapd)
+			continue;
+		if (!is_multicast_ether_addr(idata->dst) &&
+		    os_memcmp(hapd->own_addr, idata->dst, ETH_ALEN) != 0)
+			continue;
+
+		switch (idata->ouisuffix) {
+		case FT_PACKET_R0KH_R1KH_PULL:
+			oui_ctx = hapd->oui_ft_pull;
+			break;
+		case FT_PACKET_R0KH_R1KH_PUSH:
+			oui_ctx = hapd->oui_ft_push;
+			break;
+		case FT_PACKET_R0KH_R1KH_RESP:
+			oui_ctx = hapd->oui_ft_resp;
+			break;
+		default:
+			oui_ctx = NULL;
+			break;
+		}
+
+		if (oui_ctx == NULL)
+			continue;
+
+		eth_p_oui_deliver(oui_ctx, idata->src_hapd->own_addr,
+				  idata->dst, idata->data, idata->data_len);
+	}
+
+	return 0;
+}
+
+
+static int hostapd_wpa_auth_send_oui(void *ctx, const u8 *dst, u8 ouisuffix,
+				     const u8 *data, size_t data_len)
+{
+	struct hostapd_data *hapd = ctx;
+	struct eth_p_oui_ctx *oui_ctx;
+
+#ifdef CONFIG_IEEE80211R
+	if (hapd->iface->interfaces &&
+	    hapd->iface->interfaces->for_each_interface) {
+		int res;
+		struct wpa_auth_oui_iface_iter_data idata;
+
+		idata.src_hapd = hapd;
+		idata.dst = dst;
+		idata.data = data;
+		idata.data_len = data_len;
+		idata.ouisuffix = ouisuffix;
+		res = hapd->iface->interfaces->for_each_interface(
+			hapd->iface->interfaces, hostapd_wpa_auth_oui_iter,
+			&idata);
+		if (res == 1)
+			return data_len;
+	}
+#endif /* CONFIG_IEEE80211R */
+
+	switch (ouisuffix) {
+	case FT_PACKET_R0KH_R1KH_PULL:
+		oui_ctx = hapd->oui_ft_pull;
+		break;
+	case FT_PACKET_R0KH_R1KH_PUSH:
+		oui_ctx = hapd->oui_ft_push;
+		break;
+	case FT_PACKET_R0KH_R1KH_RESP:
+		oui_ctx = hapd->oui_ft_resp;
+		break;
+	default:
+		oui_ctx = NULL;
+		break;
+	}
+
+	if (oui_ctx == NULL)
+		return -1;
+
+	return eth_p_oui_send(oui_ctx, hapd->own_addr, dst, data, data_len);
 }
 
 
@@ -582,6 +682,22 @@ static void hostapd_rrb_receive(void *ctx, const u8 *src_addr, const u8 *buf,
 }
 
 
+static void
+hostapd_rrb_oui_receive(void *ctx, const u8 *src_addr, const u8 *dst_addr,
+			u8 ouisuffix, const u8 *buf, size_t len)
+{
+	struct hostapd_data *hapd = ctx;
+
+	wpa_printf(MSG_DEBUG, "FT: RRB received packet " MACSTR " -> "
+		   MACSTR, MAC2STR(src_addr), MAC2STR(dst_addr));
+	if (!is_multicast_ether_addr(dst_addr) &&
+	    os_memcmp(hapd->own_addr, dst_addr, ETH_ALEN) != 0)
+		return;
+	wpa_ft_rrb_oui_rx(hapd->wpa_auth, src_addr, dst_addr, ouisuffix, buf,
+			  len);
+}
+
+
 static int hostapd_wpa_auth_add_tspec(void *ctx, const u8 *sta_addr,
 				      u8 *tspec_ie, size_t tspec_ielen)
 {
@@ -598,6 +714,9 @@ int hostapd_setup_wpa(struct hostapd_data *hapd)
 	struct wpa_auth_callbacks cb;
 	const u8 *wpa_ie;
 	size_t wpa_ie_len;
+#ifdef CONFIG_IEEE80211R
+	const char *ft_iface;
+#endif /* CONFIG_IEEE80211R */
 
 	hostapd_wpa_auth_conf(hapd->conf, hapd->iconf, &_conf);
 	if (hapd->iface->drv_flags & WPA_DRIVER_FLAGS_EAPOL_TX_STATUS)
@@ -620,6 +739,7 @@ int hostapd_setup_wpa(struct hostapd_data *hapd)
 	cb.for_each_sta = hostapd_wpa_auth_for_each_sta;
 	cb.for_each_auth = hostapd_wpa_auth_for_each_auth;
 	cb.send_ether = hostapd_wpa_auth_send_ether;
+	cb.send_oui = hostapd_wpa_auth_send_oui;
 #ifdef CONFIG_IEEE80211R
 	cb.send_ft_action = hostapd_wpa_auth_send_ft_action;
 	cb.add_sta = hostapd_wpa_auth_add_sta;
@@ -653,15 +773,35 @@ int hostapd_setup_wpa(struct hostapd_data *hapd)
 #ifdef CONFIG_IEEE80211R
 	if (!hostapd_drv_none(hapd) &&
 	    wpa_key_mgmt_ft(hapd->conf->wpa_key_mgmt)) {
-		hapd->l2 = l2_packet_init(hapd->conf->bridge[0] ?
-					  hapd->conf->bridge :
-					  hapd->conf->iface, NULL, ETH_P_RRB,
+		ft_iface = hapd->conf->bridge[0] ? hapd->conf->bridge :
+			   hapd->conf->iface;
+		hapd->l2 = l2_packet_init(ft_iface, NULL, ETH_P_RRB,
 					  hostapd_rrb_receive, hapd, 1);
 		if (hapd->l2 == NULL &&
 		    (hapd->driver == NULL ||
 		     hapd->driver->send_ether == NULL)) {
 			wpa_printf(MSG_ERROR, "Failed to open l2_packet "
 				   "interface");
+			return -1;
+		}
+
+		hapd->oui_ft_pull = eth_p_oui_register(hapd, ft_iface,
+						       FT_PACKET_R0KH_R1KH_PULL,
+						       hostapd_rrb_oui_receive,
+						       hapd);
+		hapd->oui_ft_push = eth_p_oui_register(hapd, ft_iface,
+						       FT_PACKET_R0KH_R1KH_PUSH,
+						       hostapd_rrb_oui_receive,
+						       hapd);
+		hapd->oui_ft_resp = eth_p_oui_register(hapd, ft_iface,
+						       FT_PACKET_R0KH_R1KH_RESP,
+						       hostapd_rrb_oui_receive,
+						       hapd);
+		if (hapd->oui_ft_pull == NULL ||
+		    hapd->oui_ft_push == NULL ||
+		    hapd->oui_ft_resp == NULL) {
+			wpa_printf(MSG_ERROR, "Failed to open "
+				   "ETH_P_OUI interface");
 			return -1;
 		}
 	}
@@ -706,5 +846,11 @@ void hostapd_deinit_wpa(struct hostapd_data *hapd)
 #ifdef CONFIG_IEEE80211R
 	l2_packet_deinit(hapd->l2);
 	hapd->l2 = NULL;
+	eth_p_oui_unregister(hapd->oui_ft_pull);
+	hapd->oui_ft_pull = NULL;
+	eth_p_oui_unregister(hapd->oui_ft_resp);
+	hapd->oui_ft_resp = NULL;
+	eth_p_oui_unregister(hapd->oui_ft_push);
+	hapd->oui_ft_push = NULL;
 #endif /* CONFIG_IEEE80211R */
 }

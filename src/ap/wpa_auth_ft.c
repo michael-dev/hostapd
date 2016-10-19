@@ -41,6 +41,19 @@ static int wpa_ft_rrb_send(struct wpa_authenticator *wpa_auth, const u8 *dst,
 }
 
 
+static int
+wpa_ft_rrb_oui_send(struct wpa_authenticator *wpa_auth, const u8 *dst,
+		    u8 ouisuffix, const u8 *data, size_t data_len)
+{
+	if (wpa_auth->cb.send_oui == NULL)
+		return -1;
+	wpa_printf(MSG_DEBUG, "FT: RRB-OUI type %d send to " MACSTR,
+		   ouisuffix, MAC2STR(dst));
+	return wpa_auth->cb.send_oui(wpa_auth->cb.ctx, dst, ouisuffix, data,
+				     data_len);
+}
+
+
 static int wpa_ft_action_send(struct wpa_authenticator *wpa_auth,
 			      const u8 *dst, const u8 *data, size_t data_len)
 {
@@ -337,11 +350,6 @@ static int wpa_ft_pull_pmk_r1(struct wpa_state_machine *sm,
 		   "address " MACSTR, MAC2STR(r0kh->addr));
 
 	os_memset(&frame, 0, sizeof(frame));
-	frame.frame_type = RSN_REMOTE_FRAME_TYPE_FT_RRB;
-	frame.packet_type = FT_PACKET_R0KH_R1KH_PULL;
-	frame.data_length = host_to_le16(FT_R0KH_R1KH_PULL_DATA_LEN);
-	os_memcpy(frame.ap_address, sm->wpa_auth->addr, ETH_ALEN);
-
 	/* aes_wrap() does not support inplace encryption, so use a temporary
 	 * buffer for the data. */
 	if (random_get_bytes(f.nonce, FT_R0KH_R1KH_PULL_NONCE_LEN)) {
@@ -366,7 +374,8 @@ static int wpa_ft_pull_pmk_r1(struct wpa_state_machine *sm,
 	if (sm->ft_pending_req_ies == NULL)
 		return -1;
 
-	wpa_ft_rrb_send(sm->wpa_auth, r0kh->addr, (u8 *) &frame, sizeof(frame));
+	wpa_ft_rrb_oui_send(sm->wpa_auth, r0kh->addr, FT_PACKET_R0KH_R1KH_PULL,
+			    (u8 *) &frame, sizeof(frame));
 
 	return 0;
 }
@@ -1461,11 +1470,6 @@ static int wpa_ft_rrb_rx_pull(struct wpa_authenticator *wpa_auth,
 		   MACSTR, MAC2STR(f.r1kh_id), MAC2STR(f.s1kh_id));
 
 	os_memset(&resp, 0, sizeof(resp));
-	resp.frame_type = RSN_REMOTE_FRAME_TYPE_FT_RRB;
-	resp.packet_type = FT_PACKET_R0KH_R1KH_RESP;
-	resp.data_length = host_to_le16(FT_R0KH_R1KH_RESP_DATA_LEN);
-	os_memcpy(resp.ap_address, wpa_auth->addr, ETH_ALEN);
-
 	/* aes_wrap() does not support inplace encryption, so use a temporary
 	 * buffer for the data. */
 	os_memcpy(r.nonce, f.nonce, sizeof(f.nonce));
@@ -1495,7 +1499,8 @@ static int wpa_ft_rrb_rx_pull(struct wpa_authenticator *wpa_auth,
 
 	os_memset(pmk_r0, 0, PMK_LEN);
 
-	wpa_ft_rrb_send(wpa_auth, src_addr, (u8 *) &resp, sizeof(resp));
+	wpa_ft_rrb_oui_send(wpa_auth, src_addr, FT_PACKET_R0KH_R1KH_RESP,
+			    (u8 *) &resp, sizeof(resp));
 
 	return 0;
 }
@@ -1736,13 +1741,6 @@ int wpa_ft_rrb_rx(struct wpa_authenticator *wpa_auth, const u8 *src_addr,
 		return -1;
 	}
 
-	if (frame->packet_type == FT_PACKET_R0KH_R1KH_PULL)
-		return wpa_ft_rrb_rx_pull(wpa_auth, src_addr, data, data_len);
-	if (frame->packet_type == FT_PACKET_R0KH_R1KH_RESP)
-		return wpa_ft_rrb_rx_resp(wpa_auth, src_addr, data, data_len);
-	if (frame->packet_type == FT_PACKET_R0KH_R1KH_PUSH)
-		return wpa_ft_rrb_rx_push(wpa_auth, src_addr, data, data_len);
-
 	wpa_hexdump(MSG_MSGDUMP, "FT: RRB - FT Action frame", pos, alen);
 
 	if (alen < 1 + 1 + 2 * ETH_ALEN) {
@@ -1820,6 +1818,35 @@ int wpa_ft_rrb_rx(struct wpa_authenticator *wpa_auth, const u8 *src_addr,
 }
 
 
+void wpa_ft_rrb_oui_rx(struct wpa_authenticator *wpa_auth, const u8 *src_addr,
+		       const u8 *dst_addr, u8 ouisuffix, const u8 *data,
+		       size_t data_len)
+{
+	wpa_printf(MSG_DEBUG, "FT: RRB received frame from remote AP " MACSTR,
+		   MAC2STR(src_addr));
+	wpa_printf(MSG_DEBUG, "FT: RRB-OUI frame - ouisuffix=%d", ouisuffix);
+
+	if (is_multicast_ether_addr(dst_addr)) {
+		wpa_printf(MSG_ERROR, "FT: RRB-OUI received frame from remote "
+			   "AP " MACSTR " to multicast address " MACSTR,
+			   MAC2STR(src_addr), MAC2STR(dst_addr));
+		return;
+	}
+
+	switch (ouisuffix) {
+	case FT_PACKET_R0KH_R1KH_PULL:
+		wpa_ft_rrb_rx_pull(wpa_auth, src_addr, data, data_len);
+		break;
+	case FT_PACKET_R0KH_R1KH_RESP:
+		wpa_ft_rrb_rx_resp(wpa_auth, src_addr, data, data_len);
+		break;
+	case FT_PACKET_R0KH_R1KH_PUSH:
+		wpa_ft_rrb_rx_push(wpa_auth, src_addr, data, data_len);
+		break;
+	}
+}
+
+
 static void wpa_ft_generate_pmk_r1(struct wpa_authenticator *wpa_auth,
 				   struct wpa_ft_pmk_r0_sa *pmk_r0,
 				   struct ft_remote_r1kh *r1kh,
@@ -1831,11 +1858,6 @@ static void wpa_ft_generate_pmk_r1(struct wpa_authenticator *wpa_auth,
 	u8 *crypt;
 
 	os_memset(&frame, 0, sizeof(frame));
-	frame.frame_type = RSN_REMOTE_FRAME_TYPE_FT_RRB;
-	frame.packet_type = FT_PACKET_R0KH_R1KH_PUSH;
-	frame.data_length = host_to_le16(FT_R0KH_R1KH_PUSH_DATA_LEN);
-	os_memcpy(frame.ap_address, wpa_auth->addr, ETH_ALEN);
-
 	/* aes_wrap() does not support inplace encryption, so use a temporary
 	 * buffer for the data. */
 	os_memcpy(f.r1kh_id, r1kh->id, FT_R1KH_ID_LEN);
@@ -1860,7 +1882,8 @@ static void wpa_ft_generate_pmk_r1(struct wpa_authenticator *wpa_auth,
 		     plain, crypt) < 0)
 		return;
 
-	wpa_ft_rrb_send(wpa_auth, r1kh->addr, (u8 *) &frame, sizeof(frame));
+	wpa_ft_rrb_oui_send(wpa_auth, r1kh->addr, FT_PACKET_R0KH_R1KH_PUSH,
+			    (u8 *) &frame, sizeof(frame));
 }
 
 
