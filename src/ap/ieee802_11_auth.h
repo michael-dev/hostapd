@@ -28,7 +28,11 @@ struct radius_sta {
 int hostapd_check_acl(struct hostapd_data *hapd, const u8 *addr,
 		      struct vlan_description *vlan_id);
 int hostapd_allowed_address(struct hostapd_data *hapd, const u8 *addr,
-			    const u8 *msg, size_t len, struct radius_sta *out);
+			    const u8 *msg, size_t len, struct radius_sta *out,
+			    void (*cb)(struct hostapd_data *hapd,
+				       const u8 *buf, size_t len,
+				       const u8 *mac, int accepted,
+				       u32 session_timeout));
 int hostapd_acl_init(struct hostapd_data *hapd);
 void hostapd_acl_deinit(struct hostapd_data *hapd);
 void hostapd_free_psk_list(struct hostapd_sta_wpa_psk_short *psk);
