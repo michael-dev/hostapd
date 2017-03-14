@@ -2266,13 +2266,31 @@ void ieee802_11_finish_fils_auth(struct hostapd_data *hapd,
 #endif /* CONFIG_FILS */
 
 
+void
+ieee802_11_radius_cb(struct hostapd_data *hapd, const u8 *buf, size_t len,
+		     const u8 *mac, int accepted, u32 session_timeout)
+{
+#ifdef CONFIG_DRIVER_RADIUS_ACL
+	hostapd_drv_set_radius_acl_auth(hapd, mac, accepted, session_timeout);
+#else /* CONFIG_DRIVER_RADIUS_ACL */
+#ifdef NEED_AP_MLME
+	/* Re-send original authentication frame for 802.11 processing */
+	wpa_printf(MSG_DEBUG, "Re-sending authentication frame after "
+		   "successful RADIUS ACL query");
+	ieee802_11_mgmt(hapd, buf, len, NULL);
+#endif /* NEED_AP_MLME */
+#endif /* CONFIG_DRIVER_RADIUS_ACL */
+}
+
+
 static int ieee802_11_allowed_address(struct hostapd_data *hapd, const u8 *addr,
 				      const u8 *msg, size_t len,
 				      struct radius_sta *info)
 {
 	int res;
 
-	res = hostapd_allowed_address(hapd, addr, msg, len, info, 0);
+	res = hostapd_allowed_address(hapd, addr, msg, len, info,
+				      &ieee802_11_radius_cb, 0);
 
 	if (res == HOSTAPD_ACL_REJECT) {
 		wpa_printf(MSG_DEBUG, "Station " MACSTR
