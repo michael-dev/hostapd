@@ -819,7 +819,7 @@ void handle_probe_req(struct hostapd_data *hapd,
 	ie_len = len - IEEE80211_HDRLEN;
 
 	ret = hostapd_allowed_address(hapd, mgmt->sa, (const u8 *) mgmt, len,
-				      &rad_info, 1);
+				      &rad_info, &ieee802_11_radius_cb, 1);
 	if (ret == HOSTAPD_ACL_REJECT) {
 		wpa_msg(hapd->msg_ctx, MSG_DEBUG,
 			"Ignore Probe Request frame from " MACSTR
