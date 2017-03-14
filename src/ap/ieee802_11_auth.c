@@ -42,6 +42,8 @@ struct hostapd_acl_query_data {
 	macaddr addr;
 	u8 *auth_msg; /* IEEE 802.11 authentication frame from station */
 	size_t auth_msg_len;
+	void (*cb)(struct hostapd_data *hapd, const u8 *buf, size_t len,
+		   const u8 *mac, int accepted, u32 session_timeout);
 	struct hostapd_acl_query_data *next;
 };
 
@@ -212,6 +214,10 @@ int hostapd_check_acl(struct hostapd_data *hapd, const u8 *addr,
  */
 int hostapd_allowed_address(struct hostapd_data *hapd, const u8 *addr,
 			    const u8 *msg, size_t len, struct radius_sta *out,
+			    void (*cb)(struct hostapd_data *hapd,
+				       const u8 *buf, size_t len,
+				       const u8 *mac, int accepted,
+				       u32 session_timeout),
 			    int is_probe_req)
 {
 	int res;
@@ -282,6 +288,7 @@ int hostapd_allowed_address(struct hostapd_data *hapd, const u8 *addr,
 			return HOSTAPD_ACL_REJECT;
 		}
 		query->auth_msg_len = len;
+		query->cb = cb;
 		query->next = hapd->acl_queries;
 		hapd->acl_queries = query;
 
@@ -558,17 +565,10 @@ hostapd_acl_recv_radius(struct radius_msg *msg, struct radius_msg *req,
 	cache->next = hapd->acl_cache;
 	hapd->acl_cache = cache;
 
-#ifdef CONFIG_DRIVER_RADIUS_ACL
-	hostapd_drv_set_radius_acl_auth(hapd, query->addr, cache->accepted,
-					cache->session_timeout);
-#else /* CONFIG_DRIVER_RADIUS_ACL */
-#ifdef NEED_AP_MLME
-	/* Re-send original authentication frame for 802.11 processing */
-	wpa_printf(MSG_DEBUG, "Re-sending authentication frame after "
-		   "successful RADIUS ACL query");
-	ieee802_11_mgmt(hapd, query->auth_msg, query->auth_msg_len, NULL);
-#endif /* NEED_AP_MLME */
-#endif /* CONFIG_DRIVER_RADIUS_ACL */
+	if (query->cb)
+		query->cb(hapd, query->auth_msg, query->auth_msg_len,
+			  query->addr, cache->accepted,
+			  info->session_timeout);
 
  done:
 	if (prev == NULL)
