@@ -1933,19 +1933,12 @@ void ieee802_11_finish_fils_auth(struct hostapd_data *hapd,
 
 int
 ieee802_11_allowed_address(struct hostapd_data *hapd, const u8 *addr,
-			   const u8 *msg, size_t len, u32 *session_timeout,
-			   u32 *acct_interim_interval,
-			   struct vlan_description *vlan_id,
-			   struct hostapd_sta_wpa_psk_short **psk,
-			   char **identity, char **radius_cui, int is_probe_req)
+			   const u8 *msg, size_t len, struct radius_sta *info,
+			   int is_probe_req)
 {
 	int res;
 
-	os_memset(vlan_id, 0, sizeof(*vlan_id));
-	res = hostapd_allowed_address(hapd, addr, msg, len,
-				      session_timeout, acct_interim_interval,
-				      vlan_id, psk, identity, radius_cui,
-				      is_probe_req);
+	res = hostapd_allowed_address(hapd, addr, msg, len, info, is_probe_req);
 
 	if (res == HOSTAPD_ACL_REJECT) {
 		if (!is_probe_req)
@@ -1972,12 +1965,15 @@ ieee802_11_allowed_address(struct hostapd_data *hapd, const u8 *addr,
 
 static int
 ieee802_11_set_radius_info(struct hostapd_data *hapd, struct sta_info *sta,
-			   int res, u32 session_timeout,
-			   u32 acct_interim_interval,
-			   struct vlan_description *vlan_id,
-			   struct hostapd_sta_wpa_psk_short **psk,
-			   char **identity, char **radius_cui)
+			   int res, struct radius_sta *info)
 {
+	u32 session_timeout = info->session_timeout;
+	u32 acct_interim_interval = info->acct_interim_interval;
+	struct vlan_description *vlan_id = &info->vlan_id;
+	struct hostapd_sta_wpa_psk_short *psk = info->psk;
+	char *identity = info->identity;
+	char *radius_cui = info->radius_cui;
+
 	if (vlan_id->notempty &&
 	    !hostapd_vlan_valid(hapd->conf->vlan, vlan_id)) {
 		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_RADIUS,
@@ -1994,20 +1990,22 @@ ieee802_11_set_radius_info(struct hostapd_data *hapd, struct sta_info *sta,
 			       HOSTAPD_LEVEL_INFO, "VLAN ID %d", sta->vlan_id);
 
 	hostapd_free_psk_list(sta->psk);
-	if (hapd->conf->wpa_psk_radius != PSK_RADIUS_IGNORED) {
-		sta->psk = *psk;
-		*psk = NULL;
-	} else {
+	if (hapd->conf->wpa_psk_radius != PSK_RADIUS_IGNORED)
+		hostapd_copy_psk_list(&sta->psk, psk);
+	else
 		sta->psk = NULL;
-	}
 
 	os_free(sta->identity);
-	sta->identity = *identity;
-	*identity = NULL;
+	if (identity)
+		sta->identity = os_strdup(identity);
+	else
+		sta->identity = NULL;
 
 	os_free(sta->radius_cui);
-	sta->radius_cui = *radius_cui;
-	*radius_cui = NULL;
+	if (radius_cui)
+		sta->radius_cui = os_strdup(radius_cui);
+	else
+		sta->radius_cui = NULL;
 
 	if (hapd->conf->acct_interim_interval == 0 && acct_interim_interval)
 		sta->acct_interim_interval = acct_interim_interval;
@@ -2035,14 +2033,10 @@ static void handle_auth(struct hostapd_data *hapd,
 	int res, reply_res;
 	u16 fc;
 	const u8 *challenge = NULL;
-	u32 session_timeout, acct_interim_interval;
-	struct vlan_description vlan_id;
-	struct hostapd_sta_wpa_psk_short *psk = NULL;
 	u8 resp_ies[2 + WLAN_AUTH_CHALLENGE_LEN];
 	size_t resp_ies_len = 0;
-	char *identity = NULL;
-	char *radius_cui = NULL;
 	u16 seq_ctrl;
+	struct radius_sta info;
 
 	if (len < IEEE80211_HDRLEN + sizeof(mgmt->u.auth)) {
 		wpa_printf(MSG_INFO, "handle_auth - too short payload (len=%lu)",
@@ -2194,9 +2188,7 @@ static void handle_auth(struct hostapd_data *hapd,
 	}
 
 	res = ieee802_11_allowed_address(
-		hapd, mgmt->sa, (const u8 *) mgmt, len, &session_timeout,
-		&acct_interim_interval, &vlan_id, &psk, &identity, &radius_cui,
-		0);
+		hapd, mgmt->sa, (const u8 *) mgmt, len, &info, 0);
 	if (res == HOSTAPD_ACL_REJECT) {
 		wpa_msg(hapd->msg_ctx, MSG_DEBUG,
 			"Ignore Authentication frame from " MACSTR
@@ -2279,9 +2271,7 @@ static void handle_auth(struct hostapd_data *hapd,
 	sta->auth_rssi = rssi;
 #endif /* CONFIG_MBO */
 
-	res = ieee802_11_set_radius_info(
-		hapd, sta, res, session_timeout, acct_interim_interval,
-		&vlan_id, &psk, &identity, &radius_cui);
+	res = ieee802_11_set_radius_info(hapd, sta, res, &info);
 	if (res) {
 		wpa_printf(MSG_DEBUG, "ieee802_11_set_radius_info() failed");
 		resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
@@ -2423,10 +2413,6 @@ static void handle_auth(struct hostapd_data *hapd,
 	}
 
  fail:
-	os_free(identity);
-	os_free(radius_cui);
-	hostapd_free_psk_list(psk);
-
 	reply_res = send_auth_reply(hapd, mgmt->sa, mgmt->bssid, auth_alg,
 				    auth_transaction + 1, resp, resp_ies,
 				    resp_ies_len, "handle-auth");
@@ -3865,9 +3851,6 @@ static void handle_assoc(struct hostapd_data *hapd,
 	int left, i;
 	struct sta_info *sta;
 	u8 *tmp = NULL;
-	struct hostapd_sta_wpa_psk_short *psk = NULL;
-	char *identity = NULL;
-	char *radius_cui = NULL;
 #ifdef CONFIG_FILS
 	int delay_assoc = 0;
 #endif /* CONFIG_FILS */
@@ -3947,13 +3930,11 @@ static void handle_assoc(struct hostapd_data *hapd,
 		    hapd->iface->current_mode->mode ==
 			HOSTAPD_MODE_IEEE80211AD) {
 			int acl_res;
-			u32 session_timeout, acct_interim_interval;
-			struct vlan_description vlan_id;
+			struct radius_sta info;
 
-			acl_res = ieee802_11_allowed_address(
-				hapd, mgmt->sa, (const u8 *) mgmt, len,
-				&session_timeout, &acct_interim_interval,
-				&vlan_id, &psk, &identity, &radius_cui, 0);
+			acl_res = ieee802_11_allowed_address(hapd, mgmt->sa,
+							     (const u8 *) mgmt,
+							     len, &info, 0);
 			if (acl_res == HOSTAPD_ACL_REJECT) {
 				wpa_msg(hapd->msg_ctx, MSG_DEBUG,
 					"Ignore Association Request frame from "
@@ -3978,9 +3959,7 @@ static void handle_assoc(struct hostapd_data *hapd,
 			}
 
 			acl_res = ieee802_11_set_radius_info(
-				hapd, sta, acl_res, session_timeout,
-				acct_interim_interval, &vlan_id, &psk,
-				&identity, &radius_cui);
+				hapd, sta, acl_res, &info);
 			if (acl_res) {
 				resp = WLAN_STATUS_UNSPECIFIED_FAILURE;
 				goto fail;
@@ -4183,9 +4162,6 @@ static void handle_assoc(struct hostapd_data *hapd,
 #endif /* CONFIG_FILS */
 
  fail:
-	os_free(identity);
-	os_free(radius_cui);
-	hostapd_free_psk_list(psk);
 
 	/*
 	 * In case of a successful response, add the station to the driver.
