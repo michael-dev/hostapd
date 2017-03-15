@@ -203,8 +203,11 @@ struct wpa_authenticator {
 	u8 addr[ETH_ALEN];
 
 	struct rsn_pmksa_cache *pmksa;
+#ifdef CONFIG_IEEE80211R_AP
 	struct wpa_ft_pmk_cache *ft_pmk_cache;
-
+	u32 ft_rrb_seq_dom;
+	u32 ft_rrb_seq;
+#endif /* CONFIG_IEEE80211R_AP */
 #ifdef CONFIG_P2P
 	struct bitfield *ip_pool;
 #endif /* CONFIG_P2P */

@@ -13,6 +13,7 @@
 #include "common/eapol_common.h"
 #include "common/wpa_common.h"
 #include "common/ieee802_11_defs.h"
+#include "utils/list.h"
 
 #define MAX_OWN_IE_OVERRIDE 256
 
@@ -43,6 +44,8 @@ struct ft_rrb_frame {
 #define FT_PACKET_R0KH_R1KH_PULL 0x01
 #define FT_PACKET_R0KH_R1KH_RESP 0x02
 #define FT_PACKET_R0KH_R1KH_PUSH 0x03
+#define FT_PACKET_R0KH_R1KH_SEQ_REQ 0x04
+#define FT_PACKET_R0KH_R1KH_SEQ_RESP 0x05
 
 /* new packet format */
 
@@ -57,6 +60,7 @@ struct ft_rrb_frame {
 
 #define FT_RRB_LAST_EMPTY     0 /* placeholder or padding */
 
+#define FT_RRB_SEQ            1 /* struct ft_rrb_seq */
 #define FT_RRB_NONCE          2 /* size FT_RRB_NONCE_LEN */
 #define FT_RRB_TIMESTAMP      3 /* le32 unix seconds */
 
@@ -77,26 +81,39 @@ struct ft_rrb_tlv {
 	/* followed by data of length len */
 } STRUCT_PACKED;
 
+struct ft_rrb_seq {
+	le32 dom;
+	le32 seq;
+} STRUCT_PACKED;
+
 /* session TLVs:
  *   required: PMK_R1, PMK_R1_NAME, PAIRWISE
  *
  * pull frame TLVs:
  *   auth:
- *     required: NONCE, R0KH_ID, R1KH_ID
+ *     required: SEQ, NONCE, R0KH_ID, R1KH_ID
  *   encrypted:
  *     required: PMK_R0_NAME, S1KH_ID
  *
  * response frame TLVs:
  *   auth:
- *     required: NONCE, R0KH_ID, R1KH_ID
+ *     required: SEQ, NONCE, R0KH_ID, R1KH_ID
  *   encrypted:
  *     required: S1KH_ID, session TLVs
  *
  * push frame TLVs:
  *   auth:
- *     required: TIMESTAMP, R0KH_ID, R1KH_ID
+ *     required: SEQ, TIMESTAMP, R0KH_ID, R1KH_ID
  *   encrypted:
  *     required: S1KH_ID, PMK_R0_NAME, session TLVs
+ *
+ * sequence number request frame TLVs:
+ *   auth:
+ *     required: R0KH_ID, R1KH_ID, NONCE
+ *
+ * sequence number response frame TLVs:
+ *   auth:
+ *     required: SEQ, NONCE, R0KH_ID, R1KH_ID
  */
 
 #ifdef _MSC_VER
@@ -110,6 +127,25 @@ struct wpa_authenticator;
 struct wpa_state_machine;
 struct rsn_pmksa_cache_entry;
 struct eapol_state_machine;
+struct ft_remote_queue;
+struct dl_list;
+
+
+#define FT_REMOTE_SEQ_BACKLOG 16
+struct ft_remote_seq {
+	u32 dom;
+	/* accepted sequence numbers: (offset ... offset + 0x40000000 ]
+	 *   ( except those in last )
+	 * dropped sequence numbers: (offset - 0x40000000 ... offset ]
+         * all others trigger SEQ_REQ message ( except first message )
+         */
+	u32 last[FT_REMOTE_SEQ_BACKLOG];
+	unsigned int num_last;
+	u32 offsetidx;
+	struct dl_list queue; /* packets waiting for challenge to complete,
+				 initialized only iff num_last > 0 */
+	u8 nonce[FT_RRB_NONCE_LEN]; /* challenge for seq num */
+};
 
 
 struct ft_remote_r0kh {
@@ -118,6 +154,7 @@ struct ft_remote_r0kh {
 	u8 id[FT_R0KH_ID_MAX_LEN];
 	size_t id_len;
 	u8 key[32];
+	struct ft_remote_seq seq;
 };
 
 
@@ -126,6 +163,7 @@ struct ft_remote_r1kh {
 	u8 addr[ETH_ALEN];
 	u8 id[FT_R1KH_ID_LEN];
 	u8 key[32];
+	struct ft_remote_seq seq;
 };
 
 
