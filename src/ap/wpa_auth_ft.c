@@ -686,6 +686,11 @@ static int wpa_ft_fetch_pmk_r1(struct wpa_authenticator *wpa_auth,
 }
 
 
+void wpa_ft_deinit(struct wpa_authenticator *wpa_auth)
+{
+}
+
+
 static int wpa_ft_pull_pmk_r1(struct wpa_state_machine *sm,
 			      const u8 *ies, size_t ies_len,
 			      const u8 *pmk_r0_name)

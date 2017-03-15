@@ -345,6 +345,7 @@ void wpa_ft_rrb_oui_rx(struct wpa_authenticator *wpa_auth, const u8 *src_addr,
 		       const u8 *dst_addr, u8 oui_suffix, const u8 *data,
 		       size_t data_len);
 void wpa_ft_push_pmk_r1(struct wpa_authenticator *wpa_auth, const u8 *addr);
+void wpa_ft_deinit(struct wpa_authenticator *wpa_auth);
 #endif /* CONFIG_IEEE80211R_AP */
 
 void wpa_wnmsleep_rekey_gtk(struct wpa_state_machine *sm);
