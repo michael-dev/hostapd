@@ -460,6 +460,22 @@ struct wpa_authenticator * wpa_init(const u8 *addr,
 		os_free(wpa_auth);
 		return NULL;
 	}
+	if (random_get_bytes((u8 *) &wpa_auth->ft_rrb_seq,
+			     sizeof(wpa_auth->ft_rrb_seq))) {
+		wpa_printf(MSG_ERROR, "Failed to get random data for WPA "
+			   "FT RRB sequence number initialization.");
+		struct os_reltime now;
+		os_get_reltime(&now);
+		wpa_auth->ft_rrb_seq = now.usec;
+	}
+	if (random_get_bytes((u8 *) &wpa_auth->ft_rrb_seq_dom,
+			     sizeof(wpa_auth->ft_rrb_seq_dom))) {
+		wpa_printf(MSG_ERROR, "Failed to get random data for WPA "
+			   "FT RRB sequence number initialization.");
+		struct os_reltime now;
+		os_get_reltime(&now);
+		wpa_auth->ft_rrb_seq = now.usec;
+	}
 #endif /* CONFIG_IEEE80211R_AP */
 
 	if (wpa_auth->conf.wpa_gmk_rekey) {
@@ -518,6 +534,7 @@ void wpa_deinit(struct wpa_authenticator *wpa_auth)
 #ifdef CONFIG_IEEE80211R_AP
 	wpa_ft_pmk_cache_deinit(wpa_auth->ft_pmk_cache);
 	wpa_auth->ft_pmk_cache = NULL;
+	wpa_ft_deinit(wpa_auth);
 #endif /* CONFIG_IEEE80211R_AP */
 
 #ifdef CONFIG_P2P

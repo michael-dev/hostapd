@@ -1028,6 +1028,7 @@ static int add_r0kh(struct hostapd_bss_config *bss, char *value)
 	r0kh = os_zalloc(sizeof(*r0kh));
 	if (r0kh == NULL)
 		return -1;
+	dl_list_init(&r0kh->seq.queue);
 
 	/* 02:01:02:03:04:05 a.example.com 000102030405060708090a0b0c0d0e0f */
 	pos = value;
@@ -1074,6 +1075,7 @@ static int add_r1kh(struct hostapd_bss_config *bss, char *value)
 	r1kh = os_zalloc(sizeof(*r1kh));
 	if (r1kh == NULL)
 		return -1;
+	dl_list_init(&r1kh->seq.queue);
 
 	/* 02:01:02:03:04:05 02:01:02:03:04:05
 	 * 000102030405060708090a0b0c0d0e0f */
