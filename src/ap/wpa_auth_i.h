@@ -211,6 +211,36 @@ struct wpa_authenticator {
 };
 
 
+#ifdef CONFIG_IEEE80211R_AP
+#define FT_REMOTE_SEQ_BACKLOG 16
+struct ft_remote_seq_rx {
+	u32 dom;
+	struct os_reltime time_offset; /* local time - offset = remote time */
+
+	/* accepted sequence numbers: (offset ... offset + 0x40000000 ]
+	 *   ( except those in last )
+	 * dropped sequence numbers: (offset - 0x40000000 ... offset ]
+	 * all others trigger SEQ_REQ message ( except first message )
+	 */
+	u32 last[FT_REMOTE_SEQ_BACKLOG];
+	unsigned int num_last;
+	u32 offsetidx;
+
+	struct dl_list queue; /* send nonces + rrb msgs awaiting seq resp */
+};
+
+struct ft_remote_seq_tx {
+	u32 dom; /* non zero if initialized */
+	u32 seq;
+};
+
+struct ft_remote_seq {
+	struct ft_remote_seq_rx rx;
+	struct ft_remote_seq_tx tx;
+};
+#endif /* CONFIG_IEEE80211R_AP */
+
+
 int wpa_write_rsn_ie(struct wpa_auth_config *conf, u8 *buf, size_t len,
 		     const u8 *pmkid);
 void wpa_auth_logger(struct wpa_authenticator *wpa_auth, const u8 *addr,

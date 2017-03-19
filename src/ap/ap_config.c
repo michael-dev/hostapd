@@ -523,6 +523,7 @@ void hostapd_config_free_bss(struct hostapd_bss_config *conf)
 		while (r0kh) {
 			r0kh_prev = r0kh;
 			r0kh = r0kh->next;
+			os_free(r0kh_prev->seq);
 			os_free(r0kh_prev);
 		}
 
@@ -531,6 +532,7 @@ void hostapd_config_free_bss(struct hostapd_bss_config *conf)
 		while (r1kh) {
 			r1kh_prev = r1kh;
 			r1kh = r1kh->next;
+			os_free(r1kh_prev->seq);
 			os_free(r1kh_prev);
 		}
 	}
