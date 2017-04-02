@@ -1097,11 +1097,11 @@ def test_ap_ft_ap_oom3(dev, apdev):
         # This will fail due to not being able to send out PMK-R1 pull request
         dev[0].roam(bssid1)
 
-    with fail_test(hapd1, 1, "os_get_random;wpa_ft_pull_pmk_r1"):
+    with fail_test(hapd1, 2, "os_get_random;wpa_ft_pull_pmk_r1"):
         # This will fail due to not being able to send out PMK-R1 pull request
         dev[0].roam(bssid1)
 
-    with fail_test(hapd1, 1, "aes_siv_encrypt;wpa_ft_pull_pmk_r1"):
+    with fail_test(hapd1, 2, "aes_siv_encrypt;wpa_ft_pull_pmk_r1"):
         # This will fail due to not being able to send out PMK-R1 pull request
         dev[0].roam(bssid1)
 
