@@ -694,9 +694,10 @@ ieee802_1x_mka_encode_basic_body(
 {
 	struct ieee802_1x_mka_basic_body *body;
 	struct ieee802_1x_kay *kay = participant->kay;
-	unsigned int length = ieee802_1x_mka_basic_body_length(participant);
+	unsigned int length = sizeof(struct ieee802_1x_mka_basic_body);
+	length += participant->ckn.len;
 
-	body = wpabuf_put(buf, length);
+	body = wpabuf_put(buf, MKA_ALIGN_LENGTH(length));
 
 	body->version = kay->mka_version;
 	body->priority = kay->actor_priority;
@@ -958,8 +959,8 @@ ieee802_1x_mka_i_in_peerlist(struct ieee802_1x_mka_participant *participant,
 
 	for (pos = mka_msg, left_len = msg_len;
 	     left_len > MKA_HDR_LEN + DEFAULT_ICV_LEN;
-	     left_len -= body_len + MKA_HDR_LEN,
-		     pos += body_len + MKA_HDR_LEN) {
+	     left_len -= MKA_ALIGN_LENGTH(body_len) + MKA_HDR_LEN,
+		     pos += MKA_ALIGN_LENGTH(body_len) + MKA_HDR_LEN) {
 		hdr = (struct ieee802_1x_mka_hdr *) pos;
 		body_len = get_mka_param_body_len(hdr);
 		body_type = get_mka_param_body_type(hdr);
@@ -1725,7 +1726,7 @@ ieee802_1x_mka_decode_icv_body(struct ieee802_1x_mka_participant *participant,
 	left_len = msg_len;
 	while (left_len > (MKA_HDR_LEN + DEFAULT_ICV_LEN)) {
 		hdr = (struct ieee802_1x_mka_hdr *) pos;
-		body_len = get_mka_param_body_len(hdr);
+		body_len = MKA_ALIGN_LENGTH(get_mka_param_body_len(hdr));
 		body_type = get_mka_param_body_type(hdr);
 
 		if (left_len < (body_len + MKA_HDR_LEN))
@@ -2967,7 +2968,7 @@ static int ieee802_1x_kay_decode_mkpdu(struct ieee802_1x_kay *kay,
 
 	/* to skip basic parameter set */
 	hdr = (struct ieee802_1x_mka_hdr *) pos;
-	body_len = get_mka_param_body_len(hdr);
+	body_len = MKA_ALIGN_LENGTH(get_mka_param_body_len(hdr));
 	pos += body_len + MKA_HDR_LEN;
 	left_len -= body_len + MKA_HDR_LEN;
 
@@ -3007,7 +3008,7 @@ static int ieee802_1x_kay_decode_mkpdu(struct ieee802_1x_kay *kay,
 	     pos += body_len + MKA_HDR_LEN,
 		     left_len -= body_len + MKA_HDR_LEN) {
 		hdr = (struct ieee802_1x_mka_hdr *) pos;
-		body_len = get_mka_param_body_len(hdr);
+		body_len = MKA_ALIGN_LENGTH(get_mka_param_body_len(hdr));
 		body_type = get_mka_param_body_type(hdr);
 
 		if (body_type == MKA_ICV_INDICATOR)
