@@ -1326,7 +1326,7 @@ ieee802_1x_mka_decode_sak_use_body(
 		    body->lan == participant->lan) {
 			peer->sak_used = TRUE;
 		}
-		if (body->ltx && peer->is_key_server) {
+		if (body->ltx) { // && peer->is_key_server) {
 			ieee802_1x_cp_set_servertransmitting(kay->cp, TRUE);
 			ieee802_1x_cp_sm_step(kay->cp);
 		}
