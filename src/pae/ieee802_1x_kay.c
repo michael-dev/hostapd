@@ -3166,7 +3166,11 @@ ieee802_1x_kay_init(struct ieee802_1x_kay_ctx *ctx, enum macsec_policy policy,
 	wpa_printf(MSG_DEBUG, "KaY: state machine created");
 
 	/* Initialize the SecY must be prio to CP, as CP will control SecY */
-	secy_init_macsec(kay);
+	if (secy_init_macsec(kay) < 0) {
+		wpa_printf(MSG_ERROR, "KaY: secy init macsec failed");
+		os_free(kay);
+		return NULL;
+	}
 
 	wpa_printf(MSG_DEBUG, "KaY: secy init macsec done");
 
