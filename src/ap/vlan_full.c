@@ -133,6 +133,87 @@ static int ifconfig_down(const char *if_name)
 }
 
 
+#ifdef HAVE_LINUX_IOCTL
+static int br_delif(const char *br_name, const char *if_name)
+{
+	int fd;
+	int err;
+
+	fd = linux_ioctl_socket();
+	if (fd < 0)
+		return -1;
+
+	err = linux_br_del_if(fd, br_name, if_name);
+
+	linux_ioctl_close(fd);
+
+	return err;
+}
+
+static int br_addif(const char *br_name, const char *if_name)
+{
+	int fd;
+	int err;
+
+	fd = linux_ioctl_socket();
+	if (fd < 0)
+		return -1;
+
+	err = linux_br_add_if(fd, br_name, if_name);
+
+	linux_ioctl_close(fd);
+
+	return err;
+}
+
+static int br_delbr(const char *br_name)
+{
+	int fd;
+	int err;
+
+	fd = linux_ioctl_socket();
+	if (fd < 0)
+		return -1;
+
+	err = linux_br_del(fd, br_name);
+
+	linux_ioctl_close(fd);
+
+	return err;
+}
+
+static int br_addbr(const char *br_name)
+{
+	int fd;
+	int err;
+
+	fd = linux_ioctl_socket();
+	if (fd < 0)
+		return -1;
+
+	err = linux_br_add(fd, br_name);
+
+	linux_ioctl_close(fd);
+
+	return err;
+}
+
+static int br_getnumports(const char *br_name)
+{
+	int fd;
+	int ret;
+
+	fd = linux_ioctl_socket();
+	if (fd < 0)
+		return -1;
+	ret = linux_br_getnumports(br_name);
+
+	linux_ioctl_close(fd);
+
+	return ret;
+}
+
+#else /* HAVE_LINUX_IOCTL */
 /* This value should be 256 ONLY. If it is something else, then hostapd
  * might crash!, as this value has been hard-coded in 2.4.x kernel
  * bridging code.
@@ -152,9 +233,6 @@ static int br_delif(const char *br_name, const char *if_name)
 			   "failed: %s", __func__, strerror(errno));
 		return -1;
 	}
-
-	if (linux_br_del_if(fd, br_name, if_name) == 0)
-		goto done;
 
 	if_index = if_nametoindex(if_name);
 
@@ -208,14 +286,6 @@ static int br_addif(const char *br_name, const char *if_name)
 		return -1;
 	}
 
-	if (linux_br_add_if(fd, br_name, if_name) == 0)
-		goto done;
-	if (errno == EBUSY) {
-		/* The interface is already added. */
-		close(fd);
-		return 1;
-	}
-
 	if_index = if_nametoindex(if_name);
 
 	if (if_index == 0) {
@@ -264,9 +334,6 @@ static int br_delbr(const char *br_name)
 		return -1;
 	}
 
-	if (linux_br_del(fd, br_name) == 0)
-		goto done;
-
 	arg[0] = BRCTL_DEL_BRIDGE;
 	arg[1] = (unsigned long) br_name;
 
@@ -304,8 +371,6 @@ static int br_addbr(const char *br_name)
 		return -1;
 	}
 
-	if (linux_br_add(fd, br_name) == 0)
-		goto done;
 	if (errno == EEXIST) {
 		/* The bridge is already added. */
 		close(fd);
@@ -391,6 +456,7 @@ static int br_getnumports(const char *br_name)
 	close(fd);
 	return port_cnt;
 }
+#endif // HAVE_LINUX_IOCTL
 
 
 static void vlan_newlink_tagged(int vlan_naming, const char *tagged_interface,
