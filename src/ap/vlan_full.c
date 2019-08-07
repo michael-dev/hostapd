@@ -154,12 +154,18 @@ static int br_addif(const char *br_name, const char *if_name)
 {
 	int fd;
 	int err;
+	char old_bridge[IFNAMSIZ+1];
 
 	fd = linux_ioctl_socket();
 	if (fd < 0)
 		return -1;
 
-	err = linux_br_add_if(fd, br_name, if_name);
+	os_memset(old_bridge, 0, sizeof(old_bridge));
+	err = linux_br_get(old_bridge, if_name);
+	if (err || os_strcmp(old_bridge, br_name))
+		err = linux_br_add_if(fd, br_name, if_name);
+	else
+		err = -1; // already in bridge
 
 	linux_ioctl_close(fd);
 
@@ -206,7 +212,7 @@ static int br_getnumports(const char *br_name)
 	fd = linux_ioctl_socket();
 	if (fd < 0)
 		return -1;
-	ret = linux_br_getnumports(br_name);
+	ret = linux_br_getnumports(fd, br_name);
 
 	linux_ioctl_close(fd);
 

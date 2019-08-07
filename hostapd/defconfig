@@ -205,6 +205,9 @@ CONFIG_IPV6=y
 # Note: This requires libnl 3.1 or newer.
 #CONFIG_VLAN_NETLINK=y
 
+# Use netlink-based kernel API for BRIDGE and IFCONFIG operations instead of ioctl()
+#CONFIG_LINUX_NETLINK=y
+
 # Remove support for dumping internal state through control interface commands
 # This can be used to reduce binary size at the cost of disabling a debugging
 # option.
