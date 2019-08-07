@@ -8164,12 +8164,9 @@ static void * nl80211_global_init(void *ctx)
 	if (wpa_driver_nl80211_init_nl_global(global) < 0)
 		goto err;
 
-	global->ioctl_sock = socket(PF_INET, SOCK_DGRAM, 0);
-	if (global->ioctl_sock < 0) {
-		wpa_printf(MSG_ERROR, "nl80211: socket(PF_INET,SOCK_DGRAM) failed: %s",
-			   strerror(errno));
+	global->ioctl_sock = linux_ioctl_socket();
+	if (global->ioctl_sock < 0)
 		goto err;
-	}
 
 	return global;
 
@@ -8201,7 +8198,7 @@ static void nl80211_global_deinit(void *priv)
 	nl_cb_put(global->nl_cb);
 
 	if (global->ioctl_sock >= 0)
-		close(global->ioctl_sock);
+		linux_ioctl_close(global->ioctl_sock);
 
 	os_free(global);
 }

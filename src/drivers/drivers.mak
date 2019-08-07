@@ -158,6 +158,7 @@ endif
 
 ifdef NEED_LINUX_IOCTL
 DRV_OBJS += ../src/drivers/linux_ioctl.o
+DRV_CFLAGS += -DHAVE_LINUX_IOCTL
 endif
 
 ifdef NEED_LIBNL
