@@ -10,11 +10,15 @@
 #include <sys/ioctl.h>
 #include <net/if.h>
 #include <net/if_arp.h>
+#include <dirent.h>
 
 #include "utils/common.h"
 #include "common/linux_bridge.h"
 #include "linux_ioctl.h"
 
+
+static int global_sock = -1;
+static int global_sock_ref = 0;
 
 int linux_set_iface_flags(int sock, const char *ifname, int dev_up)
 {
@@ -214,6 +218,36 @@ int linux_br_get(char *brname, const char *ifname)
 }
 
 
+int linux_br_getnumports(const char *br_name)
+{
+	char path[255];
+	size_t pathlen;
+	int count = 0;
+	DIR * dir;
+	struct dirent * entry;
+
+	pathlen = (size_t) os_snprintf(path, sizeof(path),
+				       "/sys/class/net/%s/brif", br_name);
+	if (pathlen >= sizeof(path))
+		return -1;
+
+	dir = opendir(path);
+	if (!dir)
+		return -1;
+
+	while ((entry = readdir(dir)) != NULL) {
+		if ( os_strcmp( entry->d_name, "." ) == 0)
+		       continue;
+		if ( os_strcmp( entry->d_name, ".." ) == 0)
+		       continue;
+		count++;
+	}
+	closedir(dir);
+
+	return count;
+}
+
+
 int linux_master_get(char *master_ifname, const char *ifname)
 {
 	char buf[128], masterlink[128], *pos;
@@ -234,4 +268,29 @@ int linux_master_get(char *master_ifname, const char *ifname)
 	pos++;
 	os_strlcpy(master_ifname, pos, IFNAMSIZ);
 	return 0;
+}
+
+int linux_ioctl_socket()
+{
+	if (global_sock_ref == 0) {
+		global_sock = socket(PF_INET, SOCK_DGRAM, 0);
+		if (global_sock < 0) {
+			wpa_printf(MSG_ERROR, "linux_ioctl: socket(PF_INET,SOCK_DGRAM) failed: %s",
+				   strerror(errno));
+			return -1;
+		}
+	}
+
+	global_sock_ref++;
+	return global_sock;
+}
+
+void linux_ioctl_close(int sock)
+{
+	if (global_sock == sock && global_sock_ref > 0 ) {
+		global_sock_ref--;
+		if (global_sock_ref > 0)
+			return; // socket still in use
+	}
+	close(sock);
 }
