@@ -14,11 +14,13 @@
 #include <netlink/attr.h>
 #include <netlink/route/link.h>
 #include <netlink/route/link/bridge.h>
+#include "linux/if_bridge.h"
 
 #include "utils/common.h"
 #include "common/linux_bridge.h"
 #include "linux_ioctl.h"
 
+#define MAX_VLAN_ID 4094
 
 static struct nl_sock *global_nl = NULL;
 static int global_sock = -1;
@@ -152,6 +154,62 @@ int linux_br_add(int sock, const char *brname)
 
 	err = rtnl_link_add(global_nl, link, NLM_F_CREATE);
 	rtnl_link_put(link);
+
+	return err;
+}
+
+
+/* ops->changelink is not called during rtnl_newlink interface creation path,
+ * but br_dev_newlink does not care about IFLA_BR_VLAN_FILTERING, only
+ * br_changelink does.
+ */
+int linux_br_vlan_filtering(int sock, const char *brname, int vlan_filtering,
+			    int pvid)
+{
+	assert(sock == global_sock);
+	struct nl_msg *msg = NULL;
+	struct nlattr *info = NULL, *infodata = NULL;
+	int err = -1;
+	struct ifinfomsg ifi = { 0 };
+
+	msg = nlmsg_alloc_simple(RTM_NEWLINK, 0);
+	if (!msg)
+		return -1;
+
+	ifi.ifi_family = AF_BRIDGE;
+	if (nlmsg_append(msg, &ifi, sizeof(ifi), NLMSG_ALIGNTO) < 0)
+		goto err;
+
+	if (nla_put_string(msg, IFLA_IFNAME, brname) < 0)
+		goto err;
+
+	info = nla_nest_start(msg, IFLA_LINKINFO);
+	if (!info)
+		goto err;
+
+	if (nla_put_string(msg, IFLA_INFO_KIND, "bridge") < 0)
+		goto err;
+
+	infodata = nla_nest_start(msg, IFLA_INFO_DATA);
+	if (!infodata)
+		goto err;
+
+	if (nla_put_u8(msg, IFLA_BR_VLAN_FILTERING, vlan_filtering) < 0)
+		goto err;
+
+	if (vlan_filtering &&
+	    nla_put_u16(msg, IFLA_BR_VLAN_DEFAULT_PVID, pvid) < 0)
+		goto err;
+
+	nla_nest_end(msg, infodata);
+
+	nla_nest_end(msg, info);
+
+	err = nl_send_sync(global_nl, msg);
+	msg = NULL;
+err:
+	if (msg)
+		nlmsg_free(msg);
 
 	return err;
 }
@@ -335,6 +393,7 @@ int linux_br_getnumports(int sock, const char *br_name)
 	struct rtnl_link *link = NULL;
 	struct nl_msg *nlmsg = NULL;
         struct ifinfomsg msg = { 0 };
+	int err = -1;
 
 	if (rtnl_link_get_kernel(global_nl, 0, br_name, &link) < 0)
 		return -1;
@@ -350,13 +409,14 @@ int linux_br_getnumports(int sock, const char *br_name)
 	if (!nlmsg)
 		return -1;
 	if (nlmsg_append(nlmsg, &msg, sizeof(msg), NLMSG_ALIGNTO) < 0)
-		goto nla_put_failure;
-	NLA_PUT_U32(nlmsg, IFLA_MASTER, brifidx);
+		goto err;
+	if (nla_put_u32(nlmsg, IFLA_MASTER, brifidx) < 0)
+		goto err;
 
-	if (nl_send_auto(global_nl, nlmsg) < 0)
-		goto nla_put_failure;
-
-	nlmsg_free(nlmsg);
+	err = nl_send_sync(global_nl, nlmsg);
+	nlmsg = NULL;
+	if (err < 0)
+		goto err;
 
 	while (!done) {
 		int err = nl_recvmsgs_default(global_nl);
@@ -368,7 +428,7 @@ int linux_br_getnumports(int sock, const char *br_name)
 	nl_socket_modify_cb(global_nl, NL_CB_FINISH, NL_CB_DEFAULT, NULL, NULL);
 
 	return counter;
-nla_put_failure:
+err:
 	nlmsg_free(nlmsg);
 	return -1;
 }
@@ -392,6 +452,87 @@ err:
 	linux_ioctl_close(sock);
 
 	return ret;
+}
+
+static int
+_linux_br_vlan(int sock, const char *ifname, int add, int untagged,
+	       int numtagged, int *tagged)
+{
+	assert(sock == global_sock);
+	struct nl_msg *nlmsg = NULL;
+	struct rtnl_link *link = NULL;
+	struct nlattr *af_spec = NULL;
+	int err = -1, i;
+	struct ifinfomsg ifi = { 0 };
+
+	if (rtnl_link_get_kernel(global_nl, 0, ifname, &link) < 0)
+		goto err;
+	if (!link)
+		goto err;
+
+	nlmsg = nlmsg_alloc_simple(add ? RTM_SETLINK : RTM_DELLINK, 0);
+        if (!nlmsg)
+		goto err;
+
+	ifi.ifi_index = rtnl_link_get_ifindex(link);
+	ifi.ifi_family = AF_BRIDGE;
+        if (nlmsg_append(nlmsg, &ifi, sizeof(ifi), NLMSG_ALIGNTO) < 0)
+                goto err;
+
+	af_spec = nla_nest_start(nlmsg, IFLA_AF_SPEC);
+	if (!af_spec)
+		goto err;
+
+	/* IFLA_BRIDGE_FLAGS = u16, BRIDGE_FLAGS_SELF | BRIDGE_FLAGS_MASTER */
+
+	/* add vlan info */
+	if (untagged) {
+		struct bridge_vlan_info vinfo = {};
+		vinfo.flags = 0;
+		if (add) {
+			vinfo.flags |= BRIDGE_VLAN_INFO_PVID;
+			vinfo.flags |= BRIDGE_VLAN_INFO_UNTAGGED;
+		}
+		vinfo.vid = untagged;
+
+		if (nla_put(nlmsg, IFLA_BRIDGE_VLAN_INFO, sizeof(vinfo), &vinfo) < 0)
+			goto err;
+	}
+	for (i = 0; i < numtagged && tagged[i]; i++) {
+		if (tagged[i] == untagged ||
+		    tagged[i] <= 0 || tagged[i] > MAX_VLAN_ID ||
+		    (i > 0 && tagged[i] == tagged[i - 1]))
+			continue;
+		struct bridge_vlan_info vinfo = {};
+		vinfo.vid = tagged[i];
+		if (nla_put(nlmsg, IFLA_BRIDGE_VLAN_INFO, sizeof(vinfo), &vinfo) < 0)
+			goto err;
+	}
+
+	nla_nest_end(nlmsg, af_spec);
+
+	err = nl_send_sync(global_nl, nlmsg);
+	nlmsg = NULL;
+
+err:
+	if (link)
+		rtnl_link_put(link);
+	if (nlmsg)
+		nlmsg_free(nlmsg);
+
+	return err;
+}
+
+int linux_br_add_vlan(int sock, const char *ifname, int untagged,
+		      int numtagged, int *tagged)
+{
+	return _linux_br_vlan(sock, ifname, 1, untagged, numtagged, tagged);
+}
+
+int linux_br_del_vlan(int sock, const char *ifname, int untagged,
+		      int numtagged, int *tagged)
+{
+	return _linux_br_vlan(sock, ifname, 0, untagged, numtagged, tagged);
 }
 
 int linux_ioctl_socket()

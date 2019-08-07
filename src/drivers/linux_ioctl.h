@@ -22,6 +22,12 @@ int linux_br_getnumports(int sock, const char *br_name);
 int linux_master_get(char *master_ifname, const char *ifname);
 #ifdef HAVE_LINUX_IOCTL_NEWLINK
 int linux_br_exists(int sock, const char *br_name);
+int linux_br_vlan_filtering(int sock, const char *brname, int vlan_filtering,
+			    int pvid);
+int linux_br_add_vlan(int sock, const char *ifname, int untagged, int numtagged,
+		      int *tagged);
+int linux_br_del_vlan(int sock, const char *ifname, int untagged, int numtagged,
+		      int *tagged);
 #endif
 int linux_ioctl_socket();
 void linux_ioctl_close(int sock);
