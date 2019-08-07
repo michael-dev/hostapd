@@ -18,8 +18,11 @@ int linux_br_del(int sock, const char *brname);
 int linux_br_add_if(int sock, const char *brname, const char *ifname);
 int linux_br_del_if(int sock, const char *brname, const char *ifname);
 int linux_br_get(char *brname, const char *ifname);
-int linux_br_getnumports(const char *br_name);
+int linux_br_getnumports(int sock, const char *br_name);
 int linux_master_get(char *master_ifname, const char *ifname);
+#ifdef HAVE_LINUX_IOCTL_NEWLINK
+int linux_br_exists(int sock, const char *br_name);
+#endif
 int linux_ioctl_socket();
 void linux_ioctl_close(int sock);
 
