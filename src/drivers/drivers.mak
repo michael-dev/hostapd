@@ -161,7 +161,12 @@ endif
 endif
 
 ifdef NEED_LINUX_IOCTL
+ifdef CONFIG_LINUX_NETLINK
+DRV_OBJS += ../src/drivers/linux_ioctl_netlink.o
+DRV_CFLAGS += -DHAVE_LINUX_IOCTL_NEWLINK
+else
 DRV_OBJS += ../src/drivers/linux_ioctl.o
+endif
 DRV_CFLAGS += -DHAVE_LINUX_IOCTL
 endif
 

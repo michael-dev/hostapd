@@ -218,7 +218,7 @@ int linux_br_get(char *brname, const char *ifname)
 }
 
 
-int linux_br_getnumports(const char *br_name)
+int linux_br_getnumports(int sock, const char *br_name)
 {
 	char path[255];
 	size_t pathlen;
