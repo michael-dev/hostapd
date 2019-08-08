@@ -114,6 +114,9 @@ struct hostapd_ssid {
 #ifdef CONFIG_FULL_DYNAMIC_VLAN
 	char *vlan_tagged_interface;
 #endif /* CONFIG_FULL_DYNAMIC_VLAN */
+#ifdef CONFIG_BRIDGE_VLAN_FILTERING
+	int bridge_vlan_filtering;
+#endif /* CONFIG_BRIDGE_VLAN_FILTERING */
 };
 
 

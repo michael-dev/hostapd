@@ -206,7 +206,11 @@ CONFIG_IPV6=y
 #CONFIG_VLAN_NETLINK=y
 
 # Use netlink-based kernel API for BRIDGE and IFCONFIG operations instead of ioctl()
+# Required for CONFIG_BRIDGE_VLAN_FILTERING.
 #CONFIG_LINUX_NETLINK=y
+
+# Enable bridge vlan filtering.
+#CONFIG_BRIDGE_VLAN_FILTERING=y
 
 # Remove support for dumping internal state through control interface commands
 # This can be used to reduce binary size at the cost of disabling a debugging

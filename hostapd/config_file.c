@@ -3335,6 +3335,10 @@ static int hostapd_config_fill(struct hostapd_config *conf,
 		os_free(bss->ssid.vlan_tagged_interface);
 		bss->ssid.vlan_tagged_interface = os_strdup(pos);
 #endif /* CONFIG_FULL_DYNAMIC_VLAN */
+#ifdef CONFIG_BRIDGE_VLAN_FILTERING
+	} else if (os_strcmp(buf, "bridge_vlan_filtering") == 0) {
+		bss->ssid.bridge_vlan_filtering = atoi(pos);
+#endif /* CONFIG_BRIDGE_VLAN_FILTERING */
 #endif /* CONFIG_NO_VLAN */
 	} else if (os_strcmp(buf, "ap_table_max_size") == 0) {
 		conf->ap_table_max_size = atoi(pos);

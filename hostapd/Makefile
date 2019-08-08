@@ -213,6 +213,12 @@ OBJS += ../src/ap/vlan_util.o
 else
 OBJS += ../src/ap/vlan_ioctl.o
 endif
+ifdef CONFIG_BRIDGE_VLAN_FILTERING
+CFLAGS += -DCONFIG_BRIDGE_VLAN_FILTERING
+NEED_NETLINK=y
+NEED_LINUX_IOCTL=y
+CONFIG_LINUX_NETLINK=y
+endif
 endif
 endif
 
