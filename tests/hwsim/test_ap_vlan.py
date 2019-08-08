@@ -377,6 +377,48 @@ def test_ap_vlan_tagged(dev, apdev):
     if filename.startswith('/tmp/'):
         os.unlink(filename)
 
+def test_ap_vlan_tagged_vlan_filtering(dev, apdev):
+    """AP VLAN with tagged interface and vlan_filtering"""
+    params = {"ssid": "test-vlan-open",
+              "dynamic_vlan": "1",
+              "vlan_tagged_interface": "lo",
+              "bridge_vlan_filtering": "1",
+              "accept_mac_file": "hostapd.accept"}
+    hapd = hostapd.add_ap(apdev[0], params)
+
+    dev[0].connect("test-vlan-open", key_mgmt="NONE", scan_freq="2412")
+    dev[1].connect("test-vlan-open", key_mgmt="NONE", scan_freq="2412")
+    dev[2].connect("test-vlan-open", key_mgmt="NONE", scan_freq="2412")
+
+    try:
+        f = open("/sys/class/net/brlo/bridge/vlan_filtering")
+        vlan_filtering = f.read().rstrip()
+        logger.debug("brlo vlan filtering: " + str(vlan_filtering))
+        if vlan_filtering == "0":
+            raise Exception("VLAN filtering was not enabled")
+    except OSError as e:
+        raise HwsimSkip("vlan filtering not supported in bridge")
+
+    try:
+        subprocess.call(['bridge', 'vlan', 'add', 'dev', 'brlo', 'vid', '1','self']);
+        subprocess.call(['bridge', 'vlan', 'add', 'dev', 'brlo', 'vid', '2','self']);
+        subprocess.call(['ip', 'link', 'add', 'link', 'brlo', 'name', 'brlo.1',
+                         'type', 'vlan', 'id', '1'])
+        subprocess.call(['ifconfig', 'brlo.1', 'up'])
+        subprocess.call(['ip', 'link', 'add', 'link', 'brlo', 'name', 'brlo.2',
+                         'type', 'vlan', 'id', '2'])
+        subprocess.call(['ifconfig', 'brlo.2', 'up'])
+
+        hwsim_utils.test_connectivity_iface(dev[0], hapd, "brlo.1")
+        hwsim_utils.test_connectivity_iface(dev[1], hapd, "brlo.2")
+        hwsim_utils.test_connectivity(dev[2], hapd)
+
+    finally:
+        subprocess.call(['ifconfig', 'brlo.1', 'down'])
+        subprocess.call(['ip', 'link', 'del', 'brlo.1'])
+        subprocess.call(['ifconfig', 'brlo.2', 'down'])
+        subprocess.call(['ip', 'link', 'del', 'brlo.2'])
+
 def ap_vlan_iface_cleanup_multibss_cleanup():
     subprocess.call(['ifconfig', 'dummy0', 'down'],
                     stderr=open('/dev/null', 'w'))
@@ -677,6 +719,61 @@ def test_ap_vlan_open_per_sta_vif(dev, apdev):
     dev[0].connect("test-vlan-open", key_mgmt="NONE", scan_freq="2412")
     hwsim_utils.test_connectivity_iface(dev[0], hapd,
                                         apdev[0]['ifname'] + ".4096")
+
+def test_ap_vlan_wpa2_radius_tagged_vlan_filtering(dev, apdev):
+    """AP VLAN with WPA2-Enterprise and two RADIUS EGRESS_VLANID attributes with vlan filtering"""
+    ifname1a = 'wlan0.1'
+    ifname2a = 'brvlan.1'
+    ifname1b = 'wlan0.2'
+    ifname2b = 'brvlan.2'
+    try:
+        params = hostapd.wpa2_eap_params(ssid="test-vlan")
+        params['dynamic_vlan'] = "1"
+        params["vlan_naming"] = "1"
+        params["bridge_vlan_filtering"] = "1"
+        hapd = hostapd.add_ap(apdev[0], params)
+
+        dev[0].connect("test-vlan", key_mgmt="WPA-EAP", eap="PAX",
+                       identity="vlan1+2tagged",
+                       password_hex="0123456789abcdef0123456789abcdef",
+                       scan_freq="2412")
+
+        # Create tagged interface for wpa_supplicant
+        subprocess.call(['ip', 'link', 'add', 'link', dev[0].ifname,
+                         'name', ifname1a, 'type', 'vlan', 'id', '1'])
+        subprocess.call(['ifconfig', ifname1a, 'up'])
+
+        subprocess.call(['ip', 'link', 'add', 'link', dev[0].ifname,
+                         'name', ifname1b, 'type', 'vlan', 'id', '2'])
+        subprocess.call(['ifconfig', ifname1b, 'up'])
+
+        # Create tagged interface for hostapd
+        subprocess.call(['bridge', 'vlan', 'add', 'dev', 'brvlan', 'vid', '1','self']);
+        subprocess.call(['ip', 'link', 'add', 'link', 'brvlan',
+                         'name', ifname2a, 'type', 'vlan', 'id', '1'])
+        subprocess.call(['ifconfig', ifname2a, 'up'])
+
+        subprocess.call(['bridge', 'vlan', 'add', 'dev', 'brvlan', 'vid', '2','self']);
+        subprocess.call(['ip', 'link', 'add', 'link', 'brvlan',
+                         'name', ifname2b, 'type', 'vlan', 'id', '2'])
+        subprocess.call(['ifconfig', ifname2b, 'up'])
+
+        hwsim_utils.run_connectivity_test(dev[0], hapd, 0, ifname1=ifname1a,
+                                          ifname2=ifname2a)
+        hwsim_utils.run_connectivity_test(dev[0], hapd, 0, ifname1=ifname1b,
+                                          ifname2=ifname2b)
+    finally:
+        subprocess.call(['ifconfig', ifname1a, 'down'])
+        subprocess.call(['ip', 'link', 'del', ifname1a])
+
+        subprocess.call(['ifconfig', ifname2a, 'down'])
+        subprocess.call(['ip', 'link', 'del', ifname2a])
+
+        subprocess.call(['ifconfig', ifname1b, 'down'])
+        subprocess.call(['ip', 'link', 'del', ifname1b])
+
+        subprocess.call(['ifconfig', ifname2b, 'down'])
+        subprocess.call(['ip', 'link', 'del', ifname2b])
 
 def test_ap_vlan_wpa2_radius_tagged(dev, apdev):
     """AP VLAN with WPA2-Enterprise and RADIUS EGRESS_VLANID attributes"""
