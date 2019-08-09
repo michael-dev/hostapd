@@ -932,6 +932,8 @@ int ap_sta_set_vlan(struct hostapd_data *hapd, struct sta_info *sta,
 	/* Check if there is something to do */
 	if (hapd->conf->ssid.per_sta_vif && !sta->vlan_id) {
 		/* This sta is lacking its own vif */
+	} else if (hapd->conf->ssid.always_vlan_if && !sta->vlan_id) {
+		/* This sta is lacking its own vif */
 	} else if (hapd->conf->ssid.dynamic_vlan == DYNAMIC_VLAN_DISABLED &&
 		   !hapd->conf->ssid.per_sta_vif && sta->vlan_id) {
 		/* sta->vlan_id needs to be reset */
@@ -958,9 +960,11 @@ int ap_sta_set_vlan(struct hostapd_data *hapd, struct sta_info *sta,
 			ret = -1;
 			goto done;
 		}
-	} else if (vlan_desc && vlan_desc->notempty) {
+	} else if ((vlan_desc && vlan_desc->notempty) ||
+		   hapd->conf->ssid.always_vlan_if) {
 		for (vlan = hapd->conf->vlan; vlan; vlan = vlan->next) {
-			if (!vlan_compare(&vlan->vlan_desc, vlan_desc))
+			if (vlan->vlan_id != VLAN_ID_WILDCARD &&
+			    !vlan_compare(&vlan->vlan_desc, vlan_desc))
 				break;
 			if (vlan->vlan_id == VLAN_ID_WILDCARD)
 				wildcard_vlan = vlan;
@@ -970,8 +974,8 @@ int ap_sta_set_vlan(struct hostapd_data *hapd, struct sta_info *sta,
 		} else if (wildcard_vlan) {
 			vlan = wildcard_vlan;
 			vlan_id = vlan_desc->untagged;
-			if (vlan_desc->tagged[0]) {
-				/* Tagged VLAN configuration */
+			if (vlan_desc->tagged[0] || !vlan_desc->notempty) {
+				/* Tagged VLAN configuration or always_vlan_if */
 				vlan_id = ap_sta_get_free_vlan_id(hapd);
 			}
 		} else {
