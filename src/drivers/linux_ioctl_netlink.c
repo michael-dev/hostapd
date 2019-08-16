@@ -406,7 +406,7 @@ int linux_br_getnumports(int sock, const char *br_name)
 	nl_socket_modify_cb(global_nl, NL_CB_VALID, NL_CB_CUSTOM, _count_bridge_port, &counter);
 	nl_socket_modify_cb(global_nl, NL_CB_FINISH, NL_CB_CUSTOM, _multi_done, &done);
 
-	nlmsg = nlmsg_alloc_simple(RTM_GETLINK, NLM_F_DUMP);
+	nlmsg = nlmsg_alloc_simple(RTM_GETLINK, NLM_F_REQUEST | NLM_F_DUMP);
 	if (!nlmsg)
 		return -1;
 	if (nlmsg_append(nlmsg, &msg, sizeof(msg), NLMSG_ALIGNTO) < 0)
