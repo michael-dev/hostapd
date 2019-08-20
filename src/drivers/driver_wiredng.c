@@ -55,8 +55,7 @@ struct wpa_driver_wiredng_data {
 	int sock; /* raw packet socket for driver access */
 	int use_pae_group_addr;
 
-	int pf_sock;
-	int membership, multi, iff_allmulti, iff_up;
+	int linux_sock;
 
 	int numVlanInterfaces;
 	int* vlanInterfaceIdx;
@@ -68,7 +67,7 @@ struct wpa_driver_wiredng_data {
 };
 
 
-static int wired_multicast_membership(int sock, int ifindex,
+static int wiredng_multicast_membership(int sock, int ifindex,
 				      const u8 *addr, int add)
 {
 	struct packet_mreq mreq;
@@ -163,7 +162,7 @@ static int driver_wiredng_flush(void *priv)
 }
 
 
-static void wired_event_receive_newlink(void *ctx,struct ifinfomsg *ifi, u8 *buf, size_t len)
+static void wiredng_event_receive_newlink(void *ctx,struct ifinfomsg *ifi, u8 *buf, size_t len)
 {
 	struct wpa_driver_wiredng_data *drv = ctx;
 
@@ -182,7 +181,7 @@ static void wired_event_receive_newlink(void *ctx,struct ifinfomsg *ifi, u8 *buf
 }
 
 
-static int wired_init_sockets(struct wpa_driver_wiredng_data *drv, u8 *own_addr)
+static int wiredng_init_sockets(struct wpa_driver_wiredng_data *drv, u8 *own_addr)
 {
 	struct sockaddr_ll addr;
 	struct netlink_config *cfg = 0;
@@ -210,10 +209,15 @@ static int wired_init_sockets(struct wpa_driver_wiredng_data *drv, u8 *own_addr)
 	}
 
 	/* set link up */
-	linux_set_iface_flags(drv->sock, drv->ifname, 1);
+	drv->linux_sock = linux_ioctl_socket();
+	if (!drv->linux_sock) {
+		perror("linux sock");
+		return -1;
+	}
+	linux_set_iface_flags(drv->linux_sock, drv->ifname, 1);
 
 	/* filter multicast address */
-	if (wired_multicast_membership(drv->sock, drv->ifidx,
+	if (wiredng_multicast_membership(drv->sock, drv->ifidx,
 				       pae_group_addr, 1) < 0) {
 		wpa_printf(MSG_ERROR, "wired: Failed to add multicast group "
 			   "membership");
@@ -221,7 +225,7 @@ static int wired_init_sockets(struct wpa_driver_wiredng_data *drv, u8 *own_addr)
 	}
 
 	/* check device type and get mac */
-	if (linux_get_ifhwaddr(drv->sock, drv->ifname, own_addr) < 0)
+	if (linux_get_ifhwaddr(drv->linux_sock, drv->ifname, own_addr) < 0)
 		return -1;
 
 	cfg = os_zalloc(sizeof(*cfg));
@@ -229,7 +233,7 @@ static int wired_init_sockets(struct wpa_driver_wiredng_data *drv, u8 *own_addr)
 		return -1;
 
 	cfg->ctx = drv;
-	cfg->newlink_cb = wired_event_receive_newlink;
+	cfg->newlink_cb = wiredng_event_receive_newlink;
 	drv->nl = netlink_init(cfg);
         if (drv->nl == NULL)
 	{
@@ -242,7 +246,7 @@ static int wired_init_sockets(struct wpa_driver_wiredng_data *drv, u8 *own_addr)
 }
 
 
-static int wired_send_eapol(void *priv, const u8 *addr,
+static int wiredng_send_eapol(void *priv, const u8 *addr,
 			    const u8 *data, size_t data_len, int encrypt,
 			    const u8 *own_addr, u32 flags)
 {
@@ -255,7 +259,7 @@ static int wired_send_eapol(void *priv, const u8 *addr,
 	len = sizeof(*hdr) + data_len;
 	hdr = os_zalloc(len);
 	if (hdr == NULL) {
-		printf("malloc() failed for wired_send_eapol(len=%lu)\n",
+		printf("malloc() failed for wiredng_send_eapol(len=%lu)\n",
 		       (unsigned long) len);
 		return -1;
 	}
@@ -272,8 +276,8 @@ static int wired_send_eapol(void *priv, const u8 *addr,
 	os_free(hdr);
 
 	if (res < 0) {
-		perror("wired_send_eapol: send");
-		printf("wired_send_eapol - packet len: %lu - failed\n",
+		perror("wiredng_send_eapol: send");
+		printf("wiredng_send_eapol - packet len: %lu - failed\n",
 		       (unsigned long) len);
 	}
 
@@ -281,7 +285,7 @@ static int wired_send_eapol(void *priv, const u8 *addr,
 }
 
 
-static void * wired_driver_hapd_init(struct hostapd_data *hapd,
+static void * wiredng_driver_hapd_init(struct hostapd_data *hapd,
 				     struct wpa_init_params *params)
 {
 	struct wpa_driver_wiredng_data *drv;
@@ -301,7 +305,7 @@ static void * wired_driver_hapd_init(struct hostapd_data *hapd,
 	}
 	drv->use_pae_group_addr = params->use_pae_group_addr;
 
-	if (wired_init_sockets(drv, params->own_addr)) {
+	if (wiredng_init_sockets(drv, params->own_addr)) {
 		os_free(drv);
 		return NULL;
 	}
@@ -310,12 +314,14 @@ static void * wired_driver_hapd_init(struct hostapd_data *hapd,
 }
 
 
-static void wired_driver_hapd_deinit(void *priv)
+static void wiredng_driver_hapd_deinit(void *priv)
 {
 	struct wpa_driver_wiredng_data *drv = priv;
 
 	if (drv->sock >= 0)
 		close(drv->sock);
+	if (drv->linux_sock >= 0)
+		linux_ioctl_close(drv->linux_sock);
 	if (drv->nl)
 		netlink_deinit(drv->nl);
 
@@ -408,7 +414,7 @@ static int wpa_driver_wiredng_if_add(void *priv, enum wpa_driver_if_type type,
 	ret = macvlan_add_interface(drv->ifidx, ifname, "source", NULL);
 	if (!ret) {
 		/* set new link up */
-		linux_set_iface_flags(drv->sock, ifname, 1);
+		linux_set_iface_flags(drv->linux_sock, ifname, 1);
 
 		int* newVlanIfIdx = realloc(drv->vlanInterfaceIdx, (drv->numVlanInterfaces + 1) * sizeof(*(drv->vlanInterfaceIdx)));
 		if (newVlanIfIdx) {
@@ -492,9 +498,9 @@ static int driver_wiredng_sta_remove(void *priv, const u8 *addr)
 const struct wpa_driver_ops wpa_driver_wiredng_ops = {
 	.name = "wired-ng",
 	.desc = "Wired-ng Ethernet driver",
-	.hapd_init = wired_driver_hapd_init,
-	.hapd_deinit = wired_driver_hapd_deinit,
-	.hapd_send_eapol = wired_send_eapol,
+	.hapd_init = wiredng_driver_hapd_init,
+	.hapd_deinit = wiredng_driver_hapd_deinit,
+	.hapd_send_eapol = wiredng_send_eapol,
 	.get_ssid = wpa_driver_wiredng_get_ssid,
 	.get_bssid = wpa_driver_wiredng_get_bssid,
 	.get_capa = wpa_driver_wiredng_get_capa,
