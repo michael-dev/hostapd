@@ -64,6 +64,8 @@ Debian/Ubuntu packages are likely to be needed:
 - binutils-dev
 - libsqlite3-dev
 - libpcap-dev
+- libxml2-dev
+- libcurl4-openssl-dev
 
 example-setup.txt provides more complete step-by-step example on how a
 test setup can be built.
