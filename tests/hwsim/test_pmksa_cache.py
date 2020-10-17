@@ -386,6 +386,72 @@ def test_pmksa_cache_expiration_disconnect(dev, apdev):
     if pmksa['pmkid'] == pmksa2['pmkid']:
         raise Exception("PMKID did not change")
 
+def test_pmksa_cache_and_vlan(dev, apdev):
+    """PMKSA cache and VLAN (on reconnect)"""
+    params = hostapd.wpa2_eap_params(ssid="test-vlan")
+    params['acct_server_addr'] = "127.0.0.1"
+    params['acct_server_port'] = "1813"
+    params['acct_server_shared_secret'] = "radius"
+    params['per_sta_vif'] = "1"
+    params['dynamic_vlan'] = '1'
+    params['vlan_file'] = 'hostapd.wlan3.vlan'
+    params['bridge_vlan_filtering'] = '1'
+    hapd = hostapd.add_ap(apdev[0], params)
+    bssid = apdev[0]['bssid']
+    dev[0].connect("test-vlan", key_mgmt="WPA-EAP", eap="PAX",
+                   identity="vlan2",
+                   password_hex="0123456789abcdef0123456789abcdef",
+                   scan_freq="2412")
+    pmksa = dev[0].get_pmksa(bssid)
+    if pmksa is None:
+        raise Exception("No PMKSA cache entry created")
+    ev = hapd.wait_event(["AP-STA-CONNECTED"], timeout=5)
+    if ev is None:
+        raise Exception("No connection event received from hostapd")
+
+    subprocess.call(['ip', 'link', 'set', 'dev', "brvlan", 'type', 'bridge', 'vlan_default_pvid', '0'])
+    subprocess.call(['bridge', 'vlan', 'add', 'dev', "brvlan", 'vid', '2' ,'self']);
+    subprocess.call(['ip', 'link', 'add', 'link', "brvlan", 'name', 'brvlan.2', 'type', 'vlan', 'id', '2'])
+    subprocess.call(['ifconfig', 'brvlan.2', 'up'])
+
+    # Verify connectivity in the correct VLAN
+    hwsim_utils.test_connectivity_iface(dev[0], hapd, 'brvlan.2')
+
+    dev[0].dump_monitor()
+    logger.info("Disconnect and reconnect to the same AP")
+    dev[0].request("DISCONNECT")
+    dev[0].wait_disconnected()
+    dev[0].request("RECONNECT")
+    ev = dev[0].wait_event(["CTRL-EVENT-EAP-STARTED",
+                            "CTRL-EVENT-CONNECTED"], timeout=10)
+    if ev is None:
+        raise Exception("Reconnect timed out")
+    if "CTRL-EVENT-EAP-STARTED" in ev:
+        raise Exception("Unexpected EAP exchange")
+    pmksa1b = dev[0].get_pmksa(bssid)
+    if pmksa1b is None:
+        raise Exception("No PMKSA cache entry found")
+    if pmksa['pmkid'] != pmksa1b['pmkid']:
+        raise Exception("Unexpected PMKID change for AP1")
+
+    # Verify connectivity in the correct VLAN
+    hwsim_utils.test_connectivity_iface(dev[0], hapd, 'brvlan.2')
+
+    dev[0].request("REAUTHENTICATE")
+    ev = dev[0].wait_event(["CTRL-EVENT-EAP-SUCCESS"], timeout=10)
+    if ev is None:
+        raise Exception("EAP success timed out")
+    for i in range(0, 20):
+        state = dev[0].get_status_field("wpa_state")
+        if state == "COMPLETED":
+            break
+        time.sleep(0.1)
+    if state != "COMPLETED":
+        raise Exception("Reauthentication did not complete")
+
+    # Verify connectivity in the correct VLAN
+    hwsim_utils.test_connectivity_iface(dev[0], hapd, 'brvlan.2')
+
 def test_pmksa_cache_and_cui(dev, apdev):
     """PMKSA cache and Chargeable-User-Identity"""
     params = hostapd.wpa2_eap_params(ssid="cui")
