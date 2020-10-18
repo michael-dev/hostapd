@@ -515,6 +515,9 @@ _linux_br_vlan(int sock, const char *ifname, int add, int untagged,
 	err = nl_send_sync(global_nl, nlmsg);
 	nlmsg = NULL;
 
+	wpa_printf(MSG_WARNING, "VLAN (netlink): Interface %s %s to vlan %d%s in _linux_br_vlan",
+		   ifname, add ? "add":"del", untagged, (numtagged > 0 && tagged[0]) ? "+" : "");
+
 err:
 	if (link)
 		rtnl_link_put(link);
