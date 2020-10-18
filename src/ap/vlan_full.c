@@ -330,6 +330,9 @@ br_vlan_add(const char *if_name, int untagged, int numtagged, int *tagged)
 	if (fd < 0)
 		return -1;
 
+	wpa_printf(MSG_WARNING, "VLAN: Interface %s configured to vlan %d%s in br_vlan_add",
+		   if_name, untagged, (numtagged > 0 && tagged[0]) ? "+" : "");
+
 	err = linux_br_add_vlan(fd, if_name, untagged, numtagged, tagged);
 
 	linux_ioctl_close(fd);
@@ -848,6 +851,8 @@ static void vlan_newlink_real(void *eloop_ctx, void *timeout_ctx)
 		br_vlan_cache_commit();
 
 	ifconfig_up(ifname);
+	wpa_printf(MSG_WARNING, "VLAN: Interface %s configured to vlan %d%s in vlan_newlink_real",
+		   ifname, notempty ? untagged : 0, (notempty && tagged[0]) ? "+" : "");
 
 #ifdef CONFIG_RSN_PREAUTH_COPY
 	if (!vlan->rsn_preauth)
