@@ -539,12 +539,62 @@ int linux_br_del_vlan(int sock, const char *ifname, int untagged,
 	return _linux_br_vlan(sock, ifname, 0, untagged, numtagged, tagged);
 }
 
+struct fdb_cache {
+	struct fdb_cache *next;
+	char br_name[IFNAMSIZ];
+	u8 mac[6];
+	u8 done:1;
+	int ref;
+};
+
+struct fdb_cache *fdb_cache = NULL;
+
 static int _linux_br_fdb(int add, const char *br_name, const u8* mac)
 {
 	struct rtnl_neigh *neigh = NULL;
 	struct rtnl_link *link = NULL;
 	struct nl_addr* nl_addr = NULL;
 	int ret = -1;
+	struct fdb_cache *entry = fdb_cache, *prev = NULL;
+
+	while (entry) {
+		if (os_memcmp(mac, entry->mac, ETH_ALEN) == 0 && 
+		    os_strncmp(br_name, entry->br_name, sizeof(entry->br_name)) == 0)
+			break;
+
+		prev = entry;
+		entry = entry -> next;
+	}
+
+	if (entry && add) {
+		wpa_printf(MSG_WARNING, "FDB (netlink): bridge %s %s fdb mac %02x:%02x:%02x:%02x:%02x:%02x in _linux_br_fdb just incrementing ref",
+			   br_name, add ? "add":"del", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+		entry->ref++;
+		if (entry->done)
+			return 0;
+	} else if (entry && !add) {
+		entry->ref--;
+		if (entry->ref > 0) {
+			wpa_printf(MSG_WARNING, "FDB (netlink): bridge %s %s fdb mac %02x:%02x:%02x:%02x:%02x:%02x in _linux_br_fdb just decrementing ref",
+				   br_name, add ? "add":"del", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+			return 0;
+		}
+		if (prev)
+			prev->next = entry->next;
+		else
+			fdb_cache = entry->next;
+		os_free(entry);
+		entry = NULL;
+	} else if (!entry && add) {
+		entry = os_zalloc(sizeof(*entry));
+		if (entry) {
+			os_memcpy(entry->mac, mac, ETH_ALEN);
+			os_strlcpy(entry->br_name, br_name, sizeof(entry->br_name));
+			entry->ref = 1;
+			entry->next = fdb_cache;
+			fdb_cache = entry;
+		}
+	}
 
 	if (rtnl_link_get_kernel(global_nl, 0, br_name, &link) < 0)
 		goto err;
@@ -567,6 +617,8 @@ static int _linux_br_fdb(int add, const char *br_name, const u8* mac)
 		/* may add NLM_F_EXCL or NLM_F_APPEND */
 		if (rtnl_neigh_add(global_nl, neigh, NLM_F_CREATE) < 0)
 			goto err;
+		if (entry)
+			entry->done = 1;
 	} else if (rtnl_neigh_delete(global_nl, neigh, 0) < 0)
 			goto err;
 
