@@ -9714,21 +9714,24 @@ static int nl80211_switch_channel(void *priv, struct csa_settings *settings)
 	int csa_off_len = 0;
 	int i;
 
-	wpa_printf(MSG_DEBUG, "nl80211: Channel switch request (cs_count=%u block_tx=%u freq=%d width=%d cf1=%d cf2=%d)",
+	wpa_printf(MSG_ERROR, "nl80211: Channel switch request (cs_count=%u block_tx=%u freq=%d width=%d cf1=%d cf2=%d) (CSA)",
 		   settings->cs_count, settings->block_tx,
 		   settings->freq_params.freq, settings->freq_params.bandwidth,
 		   settings->freq_params.center_freq1,
 		   settings->freq_params.center_freq2);
 
 	if (!(drv->capa.flags & WPA_DRIVER_FLAGS_AP_CSA)) {
-		wpa_printf(MSG_DEBUG, "nl80211: Driver does not support channel switch command");
+		wpa_printf(MSG_ERROR, "nl80211: Driver does not support channel switch command (CSA)");
 		return -EOPNOTSUPP;
 	}
 
 	if (drv->nlmode != NL80211_IFTYPE_AP &&
 	    drv->nlmode != NL80211_IFTYPE_P2P_GO &&
 	    drv->nlmode != NL80211_IFTYPE_MESH_POINT)
+	{
+		wpa_printf(MSG_ERROR, "nl80211: drv->nlmode %d does not allow CSA", drv->nlmode);
 		return -EOPNOTSUPP;
+	}
 
 	/*
 	 * Remove empty counters, assuming Probe Response and Beacon frame
@@ -9762,7 +9765,10 @@ static int nl80211_switch_channel(void *priv, struct csa_settings *settings)
 	}
 
 	if (!settings->beacon_csa.tail)
+	{
+		wpa_printf(MSG_ERROR, "nl80211: settings->beacon_csa.tail = NULL (CSA)");
 		return -EINVAL;
+	}
 
 	for (i = 0; i < csa_off_len; i++) {
 		u16 csa_c_off_bcn = settings->counter_offset_beacon[i];
@@ -9771,14 +9777,20 @@ static int nl80211_switch_channel(void *priv, struct csa_settings *settings)
 		if ((settings->beacon_csa.tail_len <= csa_c_off_bcn) ||
 		    (settings->beacon_csa.tail[csa_c_off_bcn] !=
 		     settings->cs_count))
+		{
+			wpa_printf(MSG_ERROR, "nl80211: settings->beacon_csa.tail for i=%d invalid (CSA) [bcn=%u, cs_count=%u]", i, csa_c_off_bcn, settings->cs_count);
 			return -EINVAL;
+		}
 
 		if (settings->beacon_csa.probe_resp &&
 		    ((settings->beacon_csa.probe_resp_len <=
 		      csa_c_off_presp) ||
 		     (settings->beacon_csa.probe_resp[csa_c_off_presp] !=
 		      settings->cs_count)))
+		{
+			wpa_printf(MSG_ERROR, "nl80211: settings->beacon_csa.probe_resp for i=%d invalid (CSA) [presp=%u, cs_count=%u]", i, csa_c_off_presp, settings->cs_count);
 			return -EINVAL;
+		}
 	}
 
 	if (!(msg = nl80211_bss_msg(bss, 0, NL80211_CMD_CHANNEL_SWITCH)) ||
@@ -9787,21 +9799,36 @@ static int nl80211_switch_channel(void *priv, struct csa_settings *settings)
 	    (ret = nl80211_put_freq_params(msg, &settings->freq_params)) ||
 	    (settings->block_tx &&
 	     nla_put_flag(msg, NL80211_ATTR_CH_SWITCH_BLOCK_TX)))
+	{
+		wpa_printf(MSG_ERROR, "nl80211: build CSA msg failed (CSA)");
+		/* not all cases set ret here */
+		if (!ret)
+			ret = -1;
 		goto error;
+	}
 
 	/* beacon_after params */
 	ret = set_beacon_data(msg, &settings->beacon_after);
 	if (ret)
+	{
+		wpa_printf(MSG_ERROR, "nl80211: set_beacon_data failed with %d (CSA)", ret);
 		goto error;
+	}
 
 	/* beacon_csa params */
 	beacon_csa = nla_nest_start(msg, NL80211_ATTR_CSA_IES);
 	if (!beacon_csa)
+	{
+		wpa_printf(MSG_ERROR, "nl80211: nla_nest_start failed (CSA)");
 		goto fail;
+	}
 
 	ret = set_beacon_data(msg, &settings->beacon_csa);
 	if (ret)
+	{
+		wpa_printf(MSG_ERROR, "nl80211: set_beacon_data failed with %d at #2 (CSA)", ret);
 		goto error;
+	}
 
 	if (nla_put(msg, NL80211_ATTR_CSA_C_OFF_BEACON,
 		    csa_off_len * sizeof(u16),
@@ -9810,21 +9837,26 @@ static int nl80211_switch_channel(void *priv, struct csa_settings *settings)
 	     nla_put(msg, NL80211_ATTR_CSA_C_OFF_PRESP,
 		     csa_off_len * sizeof(u16),
 		     settings->counter_offset_presp)))
+	{
+		wpa_printf(MSG_ERROR, "nl80211: build msg #2 failed");
 		goto fail;
+	}
 
 	nla_nest_end(msg, beacon_csa);
 	ret = send_and_recv_msgs(drv, msg, NULL, NULL, NULL, NULL);
 	if (ret) {
-		wpa_printf(MSG_DEBUG, "nl80211: switch_channel failed err=%d (%s)",
+		wpa_printf(MSG_ERROR, "nl80211: switch_channel failed err=%d (%s) (CSA)",
 			   ret, strerror(-ret));
 	}
+	wpa_printf(MSG_ERROR, "nl80211: switch_channel completed, ret=%d (CSA)", ret);
+
 	return ret;
 
 fail:
 	ret = -ENOBUFS;
 error:
 	nlmsg_free(msg);
-	wpa_printf(MSG_DEBUG, "nl80211: Could not build channel switch request");
+	wpa_printf(MSG_ERROR, "nl80211: Could not build channel switch request (CSA)");
 	return ret;
 }
 

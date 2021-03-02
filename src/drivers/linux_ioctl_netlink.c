@@ -561,6 +561,8 @@ static int _linux_br_fdb(int add, const char *br_name, const u8* mac)
 	rtnl_neigh_set_lladdr(neigh, nl_addr);
 	rtnl_neigh_set_state(neigh, NUD_PERMANENT);
 	rtnl_neigh_set_flags(neigh, NTF_SELF);
+	wpa_printf(MSG_WARNING, "FDB (netlink): bridge %s %s fdb mac %02x:%02x:%02x:%02x:%02x:%02x in _linux_br_fdb",
+		   br_name, add ? "add":"del", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 	if (add) {
 		/* may add NLM_F_EXCL or NLM_F_APPEND */
 		if (rtnl_neigh_add(global_nl, neigh, NLM_F_CREATE) < 0)
