@@ -397,6 +397,7 @@ void ap_free_sta(struct hostapd_data *hapd, struct sta_info *sta)
 #endif /* CONFIG_DPP2 */
 
 	os_free(sta->ext_capability);
+	os_free(sta->assoc_ies);
 
 #ifdef CONFIG_WNM_AP
 	eloop_cancel_timeout(ap_sta_reset_steer_flag_timer, hapd, sta);

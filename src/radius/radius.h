@@ -47,6 +47,7 @@ struct radius_attr_hdr {
 } STRUCT_PACKED;
 
 #define RADIUS_MAX_ATTR_LEN (255 - sizeof(struct radius_attr_hdr))
+#define RADIUS_MAX_VENDOR_ATTR_LEN (RADIUS_MAX_ATTR_LEN - 6)
 
 enum { RADIUS_ATTR_USER_NAME = 1,
        RADIUS_ATTR_USER_PASSWORD = 2,
@@ -205,6 +206,13 @@ enum {
 	RADIUS_VENDOR_ATTR_WFA_HS20_T_C_URL = 10,
 };
 
+/* FeM e.V. */
+#define RADIUS_VENDOR_ID_FEM 6710637 // = 0x66656d
+
+enum {
+	RADIUS_VENDOR_ATTR_FEM_WLAN_IES = 1,
+};
+
 #ifdef _MSC_VER
 #pragma pack(pop)
 #endif /* _MSC_VER */
@@ -284,6 +292,8 @@ int radius_msg_add_mppe_keys(struct radius_msg *msg,
 			     const u8 *recv_key, size_t recv_key_len);
 int radius_msg_add_wfa(struct radius_msg *msg, u8 subtype, const u8 *data,
 		       size_t len);
+int radius_msg_add_vendor(struct radius_msg *msg, u8 subtype, const u8 *data,
+			  size_t len, u32 vendor);
 int radius_user_password_hide(struct radius_msg *msg,
 			      const u8 *data, size_t data_len,
 			      const u8 *secret, size_t secret_len,

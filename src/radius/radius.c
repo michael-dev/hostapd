@@ -1261,6 +1261,20 @@ int radius_msg_add_mppe_keys(struct radius_msg *msg,
 int radius_msg_add_wfa(struct radius_msg *msg, u8 subtype, const u8 *data,
 		       size_t len)
 {
+	return radius_msg_add_vendor(msg, subtype, data, len, RADIUS_VENDOR_ID_WFA);
+}
+
+
+int radius_msg_add_fem(struct radius_msg *msg, u8 subtype, const u8 *data,
+		       size_t len)
+{
+	return radius_msg_add_vendor(msg, subtype, data, len, RADIUS_VENDOR_ID_FEM);
+}
+
+
+int radius_msg_add_vendor(struct radius_msg *msg, u8 subtype, const u8 *data,
+			  size_t len, u32 vendor)
+{
 	struct radius_attr_hdr *attr;
 	u8 *buf, *pos;
 	size_t alen;
@@ -1270,7 +1284,7 @@ int radius_msg_add_wfa(struct radius_msg *msg, u8 subtype, const u8 *data,
 	if (buf == NULL)
 		return 0;
 	pos = buf;
-	WPA_PUT_BE32(pos, RADIUS_VENDOR_ID_WFA);
+	WPA_PUT_BE32(pos, vendor);
 	pos += 4;
 	*pos++ = subtype;
 	*pos++ = 2 + len;

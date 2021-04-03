@@ -522,6 +522,23 @@ static int add_common_radius_sta_attr(struct hostapd_data *hapd,
 	    add_common_radius_sta_attr_rsn(hapd, req_attr, sta, msg) < 0)
 		return -1;
 
+	if (sta->assoc_ies) {
+		size_t pos = 0;
+		while (pos < sta->assoc_ies_len) {
+			size_t len = sta->assoc_ies_len - pos;
+			if (len > RADIUS_MAX_VENDOR_ATTR_LEN)
+				len = RADIUS_MAX_VENDOR_ATTR_LEN;
+			if (!radius_msg_add_fem(
+				    msg, RADIUS_VENDOR_ATTR_FEM_WLAN_IES,
+				    sta->assoc_ies + pos, len)) {
+				wpa_printf(MSG_INFO,
+					   "Could not add WLAN-IES");
+				return -1;
+			}
+			pos += len;
+		}
+	}
+
 	return 0;
 }
 

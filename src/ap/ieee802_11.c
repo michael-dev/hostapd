@@ -4354,6 +4354,12 @@ static int check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
 	size_t wpa_ie_len;
 	const u8 *p2p_dev_addr = NULL;
 
+	os_free(sta->assoc_ies);
+	sta->assoc_ies = os_malloc(ies_len);
+	sta->assoc_ies_len = ies_len;
+	if (sta->assoc_ies)
+		os_memcpy(sta->assoc_ies, ies, ies_len);
+
 	if (ieee802_11_parse_elems(ies, ies_len, &elems, 1) == ParseFailed) {
 		hostapd_logger(hapd, sta->addr, HOSTAPD_MODULE_IEEE80211,
 			       HOSTAPD_LEVEL_INFO, "Station sent an invalid "
