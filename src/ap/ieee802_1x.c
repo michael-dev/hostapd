@@ -522,6 +522,15 @@ static int add_common_radius_sta_attr(struct hostapd_data *hapd,
 	    add_common_radius_sta_attr_rsn(hapd, req_attr, sta, msg) < 0)
 		return -1;
 
+	if (sta->assoc_ies &&
+	    !radius_msg_add_extended_vsa(msg, RADIUS_ATTR_EXTENDED_5,
+					 RADIUS_VENDOR_ATTR_FEM_WLAN_IES,
+					 sta->assoc_ies, sta->assoc_ies_len,
+					 RADIUS_VENDOR_ID_FEM)) {
+		wpa_printf(MSG_INFO, "Could not add FeM-WLAN-IES");
+		return -1;
+	}
+
 	return 0;
 }
 

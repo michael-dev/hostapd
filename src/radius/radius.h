@@ -212,6 +212,13 @@ enum {
 	RADIUS_VENDOR_ATTR_WFA_HS20_T_C_URL = 10,
 };
 
+/* FeM e.V. */
+#define RADIUS_VENDOR_ID_FEM 6710637 // = 0x66656d
+
+enum {
+	RADIUS_VENDOR_ATTR_FEM_WLAN_IES = 1,
+};
+
 #ifdef _MSC_VER
 #pragma pack(pop)
 #endif /* _MSC_VER */

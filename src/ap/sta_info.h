@@ -310,6 +310,9 @@ struct sta_info {
 	u8 *ext_capability;
 	char *ifname_wds; /* WDS ifname, if in use */
 
+	u8 *assoc_ies;
+	size_t assoc_ies_len;
+
 #ifdef CONFIG_DPP2
 	struct dpp_pfs *dpp_pfs;
 #endif /* CONFIG_DPP2 */
