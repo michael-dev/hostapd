@@ -212,6 +212,14 @@ enum {
 	RADIUS_VENDOR_ATTR_WFA_HS20_T_C_URL = 10,
 };
 
+/* HostAP */
+#define RADIUS_VENDOR_ID_HOSTAP 39068
+
+enum {
+	RADIUS_VENDOR_ATTR_HOSTAP_PROBE_IES = 0,
+	RADIUS_VENDOR_ATTR_HOSTAP_ASSOC_IES = 1,
+};
+
 #ifdef _MSC_VER
 #pragma pack(pop)
 #endif /* _MSC_VER */

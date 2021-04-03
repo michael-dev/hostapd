@@ -522,6 +522,28 @@ static int add_common_radius_sta_attr(struct hostapd_data *hapd,
 	    add_common_radius_sta_attr_rsn(hapd, req_attr, sta, msg) < 0)
 		return -1;
 
+#ifdef CONFIG_TAXONOMY
+	if (sta->probe_ie_taxonomy &&
+	    !radius_msg_add_extended_vsa(msg, RADIUS_ATTR_EXTENDED_5,
+					 RADIUS_VENDOR_ATTR_HOSTAP_PROBE_IES,
+					 wpabuf_head(sta->probe_ie_taxonomy),
+					 wpabuf_len(sta->probe_ie_taxonomy),
+					 RADIUS_VENDOR_ID_HOSTAP)) {
+		wpa_printf(MSG_INFO, "Could not add HostAP-Probe-IES");
+		return -1;
+	}
+
+	if (sta->assoc_ie_taxonomy &&
+	    !radius_msg_add_extended_vsa(msg, RADIUS_ATTR_EXTENDED_5,
+					 RADIUS_VENDOR_ATTR_HOSTAP_ASSOC_IES,
+					 wpabuf_head(sta->assoc_ie_taxonomy),
+					 wpabuf_len(sta->assoc_ie_taxonomy),
+					 RADIUS_VENDOR_ID_HOSTAP)) {
+		wpa_printf(MSG_INFO, "Could not add HostAP-Assoc-IES");
+		return -1;
+	}
+#endif /* CONFIG_TAXONOMY */
+
 	return 0;
 }
 
