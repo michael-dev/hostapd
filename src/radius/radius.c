@@ -14,6 +14,9 @@
 #include "crypto/crypto.h"
 #include "radius.h"
 
+#ifndef MIN
+#define MIN(a, b) (((a) < (b)) ? (a) : (b))
+#endif
 
 /**
  * struct radius_msg - RADIUS message structure for new and parsed messages
@@ -1294,6 +1297,96 @@ int radius_msg_add_wfa(struct radius_msg *msg, u8 subtype, const u8 *data,
 	return 1;
 }
 
+
+// RFC 6929
+size_t _radius_msg_add_extended_vsa(struct radius_msg *msg, u8 type, u8 *evs,
+				    size_t evslen, const u8 *data, size_t len,
+				    size_t offset)
+{
+	const u8 *bufptr[2];
+	size_t buflen[2];
+	u8 hdr[2];
+	size_t hdrlen, hlen;
+	size_t fraglen;
+	struct radius_attr_hdr *attr;
+	size_t numbuf;
+	size_t remaining = len - offset;
+
+	// independently defined as 26 by RFC 6929
+	hdr[0] = RADIUS_ATTR_VENDOR_SPECIFIC;
+	hdrlen = 1;
+
+	switch (type) {
+		case RADIUS_ATTR_EXTENDED_1:
+		case RADIUS_ATTR_EXTENDED_2:
+		case RADIUS_ATTR_EXTENDED_3:
+		case RADIUS_ATTR_EXTENDED_4:
+			hlen = evslen + hdrlen;
+			if (hlen + remaining > RADIUS_MAX_ATTR_LEN) {
+				wpa_printf(MSG_ERROR,
+					   "WARNING: attr data too exceeds maximum size of extended attribute");
+				return 0;
+			}
+			fraglen = remaining;
+			break;
+		case RADIUS_ATTR_EXTENDED_5:
+		case RADIUS_ATTR_EXTENDED_6:
+			hdr[1] = 0;
+			hdrlen++;
+
+			hlen = evslen + hdrlen;
+
+			fraglen = MIN(remaining, RADIUS_MAX_ATTR_LEN - hlen);
+			if (fraglen < remaining)
+				hdr[1] |= RADIUS_LONGEXT_FLAG_MORE;
+			break;
+		default:
+			wpa_printf(MSG_ERROR,
+				   "WARNING: Invalid attr type %d used with %s",
+				   type, __FUNCTION__);
+			return 0;
+	}
+
+	bufptr[0] = hdr;
+	buflen[0] = hdrlen;
+	numbuf = 1;
+	if (evslen) {
+		bufptr[1] = evs;
+		buflen[1] = evslen;
+		numbuf = 2;
+	}
+
+	attr = radius_msg_add_attr_frag(msg, type, numbuf, bufptr, buflen,
+					data + offset, fraglen);
+	if (attr == NULL)
+		return 0;
+
+	offset += fraglen;
+
+	return offset;
+}
+
+int radius_msg_add_extended_vsa(struct radius_msg *msg, u8 type, u8 subtype,
+				const u8 *data, size_t len, u32 vendor)
+{
+	size_t offset = 0;
+	u8 evs[5];
+	size_t evslen = sizeof(evs);
+
+	WPA_PUT_BE32(evs, vendor);
+	evs[4] = subtype;
+
+	do {
+		offset = _radius_msg_add_extended_vsa(msg, type, evs, evslen,
+						      data, len, offset);
+		if (!offset)
+			return 0;
+
+		evslen = 0; // evs only added on first fragment
+	} while (offset < len);
+
+	return 1;
+}
 
 int radius_user_password_hide(struct radius_msg *msg,
 			      const u8 *data, size_t data_len,
