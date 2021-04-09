@@ -630,19 +630,33 @@ static int radius_msg_add_attr_to_array(struct radius_msg *msg,
 struct radius_attr_hdr *radius_msg_add_attr(struct radius_msg *msg, u8 type,
 					    const u8 *data, size_t data_len)
 {
+	return radius_msg_add_attr_frag(msg, type, 0, NULL, NULL, data,
+					data_len);
+}
+
+struct radius_attr_hdr * radius_msg_add_attr_frag(struct radius_msg *msg,
+						  u8 type, int num_frag,
+						  const u8 **frag,
+						  const size_t *frag_len,
+						  const u8 *data,
+						  size_t data_len)
+{
 	size_t buf_needed;
 	struct radius_attr_hdr *attr;
+	int i;
 
 	if (TEST_FAIL())
 		return NULL;
 
-	if (data_len > RADIUS_MAX_ATTR_LEN) {
+	buf_needed = sizeof(*attr) + data_len;
+	for (i = 0; i < num_frag; i++)
+		buf_needed += frag_len[i];
+
+	if (buf_needed > sizeof(*attr) + RADIUS_MAX_ATTR_LEN) {
 		wpa_printf(MSG_ERROR, "radius_msg_add_attr: too long attribute (%lu bytes)",
-		       (unsigned long) data_len);
+		       (unsigned long) (buf_needed - sizeof(*attr)));
 		return NULL;
 	}
-
-	buf_needed = sizeof(*attr) + data_len;
 
 	if (wpabuf_tailroom(msg->buf) < buf_needed) {
 		/* allocate more space for message buffer */
@@ -653,7 +667,9 @@ struct radius_attr_hdr *radius_msg_add_attr(struct radius_msg *msg, u8 type,
 
 	attr = wpabuf_put(msg->buf, sizeof(struct radius_attr_hdr));
 	attr->type = type;
-	attr->length = sizeof(*attr) + data_len;
+	attr->length = buf_needed;
+	for (i = 0; i < num_frag; i++)
+		wpabuf_put_data(msg->buf, frag[i], frag_len[i]);
 	wpabuf_put_data(msg->buf, data, data_len);
 
 	if (radius_msg_add_attr_to_array(msg, attr))
@@ -1262,22 +1278,16 @@ int radius_msg_add_wfa(struct radius_msg *msg, u8 subtype, const u8 *data,
 		       size_t len)
 {
 	struct radius_attr_hdr *attr;
-	u8 *buf, *pos;
-	size_t alen;
+	u8 buf[6];
+	size_t buflen = sizeof(buf);
 
-	alen = 4 + 2 + len;
-	buf = os_malloc(alen);
-	if (buf == NULL)
-		return 0;
-	pos = buf;
-	WPA_PUT_BE32(pos, RADIUS_VENDOR_ID_WFA);
-	pos += 4;
-	*pos++ = subtype;
-	*pos++ = 2 + len;
-	os_memcpy(pos, data, len);
-	attr = radius_msg_add_attr(msg, RADIUS_ATTR_VENDOR_SPECIFIC,
-				   buf, alen);
-	os_free(buf);
+	WPA_PUT_BE32(buf, RADIUS_VENDOR_ID_WFA);
+	buf[4] = subtype;
+	buf[5] = 2 + len;
+
+	const u8 *bufptr = buf;
+	attr = radius_msg_add_attr_frag(msg, RADIUS_ATTR_VENDOR_SPECIFIC,
+					1, &bufptr, &buflen, data, len);
 	if (attr == NULL)
 		return 0;
 

@@ -257,6 +257,12 @@ int radius_msg_verify_acct_req(struct radius_msg *msg, const u8 *secret,
 int radius_msg_verify_das_req(struct radius_msg *msg, const u8 *secret,
 			      size_t secret_len,
 			      int require_message_authenticator);
+struct radius_attr_hdr * radius_msg_add_attr_frag(struct radius_msg *msg,
+						  u8 type, int num_frag,
+						  const u8 **frag,
+						  const size_t *frag_len,
+						  const u8 *data,
+						  size_t data_len);
 struct radius_attr_hdr * radius_msg_add_attr(struct radius_msg *msg, u8 type,
 					     const u8 *data, size_t data_len);
 struct radius_msg * radius_msg_parse(const u8 *data, size_t len);
