@@ -14,6 +14,9 @@
 #include "crypto/crypto.h"
 #include "radius.h"
 
+#ifndef MIN
+#define MIN(a, b) (((a) < (b)) ? (a) : (b))
+#endif
 
 /**
  * struct radius_msg - RADIUS message structure for new and parsed messages
@@ -1294,6 +1297,67 @@ int radius_msg_add_wfa(struct radius_msg *msg, u8 subtype, const u8 *data,
 	return 1;
 }
 
+
+// RFC 6929
+int radius_msg_add_extended_vsa(struct radius_msg *msg, u8 type, u8 subtype,
+				const u8 *data, size_t len, u32 vendor)
+{
+	const u8 *bufptr[2];
+	size_t buflen[2];
+	size_t offset = 0;
+
+	u8 evs[5];
+	WPA_PUT_BE32(evs, vendor);
+	evs[4] = subtype;
+
+	bufptr[1] = evs;
+	buflen[1] = sizeof(evs);
+
+	do {
+		u8 hdr[2];
+		size_t hdrlen = 1;
+		size_t fraglen;
+		struct radius_attr_hdr *attr;
+
+		hdr[0] = RADIUS_ATTR_VENDOR_SPECIFIC; // independently defined as 26 by RFC 6929
+
+		switch (type) {
+			case RADIUS_ATTR_EXTENDED_1:
+			case RADIUS_ATTR_EXTENDED_2:
+			case RADIUS_ATTR_EXTENDED_3:
+			case RADIUS_ATTR_EXTENDED_4:
+				if (hdrlen + len - offset > RADIUS_MAX_ATTR_LEN) {
+					wpa_printf(MSG_ERROR, "WARNING: attr data too exceeds maximum size of extended attribute");
+					return 0;
+				}
+				fraglen = len - offset;
+				break;
+			case RADIUS_ATTR_EXTENDED_5:
+			case RADIUS_ATTR_EXTENDED_6:
+				hdr[1] = 0;
+				hdrlen++;
+
+				fraglen = MIN(len - offset, RADIUS_MAX_ATTR_LEN - hdrlen);
+				if (fraglen < len - offset)
+					hdr[1] |= RADIUS_LONGEXT_FLAG_MORE;
+				break;
+			default:
+				wpa_printf(MSG_ERROR, "WARNING: Invalid attr type %d used with %s", type, __FUNCTION__);
+				return 0;
+		}
+
+		bufptr[0] = hdr;
+		buflen[0] = hdrlen;
+
+		attr = radius_msg_add_attr_frag(msg, type, offset > 0 ? 1 : 2, bufptr, buflen, data + offset, fraglen);
+		if (attr == NULL)
+			return 0;
+
+		offset += fraglen;
+	} while (offset < len);
+
+	return 1;
+}
 
 int radius_user_password_hide(struct radius_msg *msg,
 			      const u8 *data, size_t data_len,
