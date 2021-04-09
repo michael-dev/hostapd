@@ -113,6 +113,12 @@ enum { RADIUS_ATTR_USER_NAME = 1,
        RADIUS_ATTR_WLAN_GROUP_CIPHER = 187,
        RADIUS_ATTR_WLAN_AKM_SUITE = 188,
        RADIUS_ATTR_WLAN_GROUP_MGMT_CIPHER = 189,
+       RADIUS_ATTR_EXTENDED_1 = 241,
+       RADIUS_ATTR_EXTENDED_2 = 242,
+       RADIUS_ATTR_EXTENDED_3 = 243,
+       RADIUS_ATTR_EXTENDED_4 = 244,
+       RADIUS_ATTR_EXTENDED_5 = 245, // long extended
+       RADIUS_ATTR_EXTENDED_6 = 246, // long extended
 };
 
 
@@ -172,6 +178,7 @@ enum { RADIUS_ATTR_USER_NAME = 1,
 #define RADIUS_TUNNEL_MEDIUM_TYPE_IPV6 2
 #define RADIUS_TUNNEL_MEDIUM_TYPE_802 6
 
+#define RADIUS_LONGEXT_FLAG_MORE 0x80
 
 struct radius_attr_vendor {
 	u8 vendor_type;
@@ -290,6 +297,8 @@ int radius_msg_add_mppe_keys(struct radius_msg *msg,
 			     const u8 *recv_key, size_t recv_key_len);
 int radius_msg_add_wfa(struct radius_msg *msg, u8 subtype, const u8 *data,
 		       size_t len);
+int radius_msg_add_extended_vsa(struct radius_msg *msg, u8 type, u8 subtype,
+				const u8 *data, size_t len, u32 vendor);
 int radius_user_password_hide(struct radius_msg *msg,
 			      const u8 *data, size_t data_len,
 			      const u8 *secret, size_t secret_len,
