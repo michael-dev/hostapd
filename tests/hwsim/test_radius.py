@@ -1148,7 +1148,7 @@ def test_radius_protocol(dev, apdev):
         t_events['stop'].set()
         t.join()
 
-def build_tunnel_password(secret, authenticator, psk):
+def build_tunnel_password(secret, authenticator, psk, tag=b'\x00'):
     a = b"\xab\xcd"
     psk = psk.encode()
     padlen = 16 - (1 + len(psk)) % 16
@@ -1164,11 +1164,14 @@ def build_tunnel_password(secret, authenticator, psk):
         cc = bytearray(pp[i] ^ bb[i] for i in range(len(bb)))
         cc_all += cc
         b = hashlib.md5(secret + cc).digest()
-    data = b'\x00' + a + bytes(cc_all)
+    data = tag + a + bytes(cc_all)
     return data
 
+def build_tunnel_identity(id, tag=b'\x00'):
+   return tag + id.encode()
+
 def start_radius_psk_server(psk, invalid_code=False, acct_interim_interval=0,
-                            session_timeout=0, reject=False):
+                            session_timeout=0, reject=False, sae_identity=[]):
     try:
         import pyrad.server
         import pyrad.packet
@@ -1186,15 +1189,24 @@ def start_radius_psk_server(psk, invalid_code=False, acct_interim_interval=0,
                 reply.code = pyrad.packet.AccessRequest
             if self.t_events['reject']:
                 reply.code = pyrad.packet.AccessReject
-            data = build_tunnel_password(reply.secret, pkt.authenticator,
-                                         self.t_events['psk'])
-            reply.AddAttribute("Tunnel-Password", data)
+            psk = self.t_events['psk']
+            if not isinstance(psk, list):
+                psk=[psk]
+            for i in range(len(psk)):
+                data = build_tunnel_password(reply.secret, pkt.authenticator,
+                                             psk[i], bytes([i]))
+                reply.AddAttribute("Tunnel-Password", data)
+            for i in range(len(self.t_events['sae_identity'])):
+                for sae_identity in self.t_events['sae_identity'][i]:
+                    data = build_tunnel_identity(sae_identity, bytes([i]))
+                    reply.AddAttribute("Tunnel-Client-Auth-ID", data)
             if self.t_events['acct_interim_interval']:
                 reply.AddAttribute("Acct-Interim-Interval",
                                    self.t_events['acct_interim_interval'])
             if self.t_events['session_timeout']:
                 reply.AddAttribute("Session-Timeout",
                                    self.t_events['session_timeout'])
+
             self.SendReplyPacket(pkt.fd, reply)
 
         def RunWithStop(self, t_events):
@@ -1225,9 +1237,11 @@ def start_radius_psk_server(psk, invalid_code=False, acct_interim_interval=0,
                                                      b"radius",
                                                      "localhost")
     srv.BindToAddress("")
+
     t_events = {}
     t_events['stop'] = threading.Event()
     t_events['psk'] = psk
+    t_events['sae_identity'] = sae_identity
     t_events['invalid_code'] = invalid_code
     t_events['acct_interim_interval'] = acct_interim_interval
     t_events['session_timeout'] = session_timeout
@@ -1247,6 +1261,28 @@ def hostapd_radius_psk_test_params():
     params['auth_server_port'] = "18138"
     return params
 
+def hostapd_radius_sae_test_params():
+    params = hostapd.radius_params()
+    params['ssid'] = "test-wpa3-sae"
+    params["wpa"] = "2"
+    params["wpa_key_mgmt"] = "SAE"
+    params["rsn_pairwise"] = "CCMP"
+    params['macaddr_acl'] = '2'
+    params['wpa_psk_radius'] = '2'
+    params['auth_server_port'] = "18138"
+    return params
+
+def hostapd_radius_sae_ft_test_params():
+    params = hostapd.radius_params()
+    params['ssid'] = "test-wpa3-sae-ft"
+    params["wpa"] = "2"
+    params["wpa_key_mgmt"] = "FT-SAE"
+    params["rsn_pairwise"] = "CCMP"
+    params['macaddr_acl'] = '2'
+    params['wpa_psk_radius'] = '2'
+    params['auth_server_port'] = "18138"
+    return params
+
 def test_radius_psk(dev, apdev):
     """WPA2 with PSK from RADIUS"""
     t, t_events = start_radius_psk_server("12345678")
@@ -1258,6 +1294,35 @@ def test_radius_psk(dev, apdev):
         t_events['psk'] = "0123456789abcdef"
         dev[1].connect("test-wpa2-psk", psk="0123456789abcdef",
                        scan_freq="2412")
+    finally:
+        t_events['stop'].set()
+        t.join()
+
+def test_radius_psk_multi(dev, apdev):
+    """WPA2 with PSK from RADIUS"""
+    t, t_events = start_radius_psk_server(psk=["12345678","abcdefgh"])
+
+    try:
+        params = hostapd_radius_psk_test_params()
+        hapd = hostapd.add_ap(apdev[0], params)
+        dev[0].connect("test-wpa2-psk", psk="12345678", scan_freq="2412")
+        dev[1].connect("test-wpa2-psk", psk="abcdefgh", scan_freq="2412")
+    finally:
+        t_events['stop'].set()
+        t.join()
+
+
+def test_radius_psk_duplicate(dev, apdev):
+    """WPA2 with PSK from RADIUS with duplicate psk"""
+    t, t_events = start_radius_psk_server(psk=["12345678","12345678","abcdefgh", "abcdefgh"])
+
+    try:
+        params = hostapd_radius_psk_test_params()
+        hapd = hostapd.add_ap(apdev[0], params)
+        dev[0].connect("test-wpa2-psk", psk="12345678", scan_freq="2412",
+                       key_mgmt="WPA-PSK")
+        dev[1].connect("test-wpa2-psk", psk="abcdefgh", scan_freq="2412",
+                       key_mgmt="WPA-PSK")
     finally:
         t_events['stop'].set()
         t.join()
@@ -1299,6 +1364,20 @@ def test_radius_psk_hex_psk(dev, apdev):
         params = hostapd_radius_psk_test_params()
         hapd = hostapd.add_ap(apdev[0], params)
         dev[0].connect("test-wpa2-psk", raw_psk=64*'2', scan_freq="2412")
+    finally:
+        t_events['stop'].set()
+        t.join()
+
+def test_radius_psk_hex_psk_multi(dev, apdev):
+    """WPA2 with PSK hexstring from RADIUS (multiple values)"""
+    t, t_events = start_radius_psk_server(psk=[64*'2', 64*'a'], acct_interim_interval=19,
+                                          session_timeout=123)
+
+    try:
+        params = hostapd_radius_psk_test_params()
+        hapd = hostapd.add_ap(apdev[0], params)
+        dev[0].connect("test-wpa2-psk", raw_psk=64*'2', scan_freq="2412")
+        dev[1].connect("test-wpa2-psk", raw_psk=64*'a', scan_freq="2412")
     finally:
         t_events['stop'].set()
         t.join()
@@ -1708,3 +1787,102 @@ def test_radius_acct_failure_sta_data(dev, apdev):
         dev[0].request("DISCONNECT")
         dev[0].wait_disconnected()
         hapd.wait_event(["AP-STA-DISCONNECTED"], timeout=1)
+
+def test_radius_sae(dev, apdev):
+    """WPA3 with SAE from RADIUS"""
+    t, t_events = start_radius_psk_server("12345678")
+
+    try:
+        params = hostapd_radius_sae_test_params()
+        hapd = hostapd.add_ap(apdev[0], params)
+        dev[0].connect("test-wpa3-sae", sae_password="12345678", key_mgmt="SAE",
+                       scan_freq="2412")
+        t_events['psk'] = "0123456789abcdef"
+        dev[1].connect("test-wpa3-sae", sae_password="0123456789abcdef", key_mgmt="SAE",
+                       scan_freq="2412")
+    finally:
+        t_events['stop'].set()
+        t.join()
+
+def test_radius_sae_ft(dev, apdev):
+    """WPA3 with FT-SAE from RADIUS"""
+    t, t_events = start_radius_psk_server("12345678")
+
+    try:
+        params = hostapd_radius_sae_ft_test_params()
+        hapd = hostapd.add_ap(apdev[0], params)
+        dev[0].connect("test-wpa3-sae-ft", sae_password="12345678", key_mgmt="FT-SAE",
+                       scan_freq="2412")
+        t_events['psk'] = "0123456789abcdef"
+        dev[1].connect("test-wpa3-sae-ft", sae_password="0123456789abcdef", key_mgmt="FT-SAE",
+                       scan_freq="2412")
+    finally:
+        t_events['stop'].set()
+        t.join()
+
+def test_radius_sae_id(dev, apdev):
+    """WPA3 with SAE from RADIUS with SAE password identity"""
+    t, t_events = start_radius_psk_server(psk=["12345678"], sae_identity=[["user0"]])
+
+    try:
+        params = hostapd_radius_sae_test_params()
+        hapd = hostapd.add_ap(apdev[0], params)
+        dev[0].connect("test-wpa3-sae", key_mgmt="SAE", scan_freq="2412", 
+                       sae_password="12345678", sae_password_id="user0")
+        t_events['psk'] = ["0123456789abcdef"]
+        t_events['sae_identity'] = [["user1"]]
+        dev[1].connect("test-wpa3-sae", key_mgmt="SAE", scan_freq="2412",
+                       sae_password="0123456789abcdef", sae_password_id="user1")
+    finally:
+        t_events['stop'].set()
+        t.join()
+
+def test_radius_sae_id_ft(dev, apdev):
+    """WPA3 with FT-SAE from RADIUS with SAE password identity"""
+    t, t_events = start_radius_psk_server(psk=["12345678"], sae_identity=[["user0"]])
+
+    try:
+        params = hostapd_radius_sae_ft_test_params()
+        hapd = hostapd.add_ap(apdev[0], params)
+        dev[0].connect("test-wpa3-sae-ft", key_mgmt="FT-SAE", scan_freq="2412", 
+                       sae_password="12345678", sae_password_id="user0")
+        t_events['psk'] = ["0123456789abcdef"]
+        t_events['sae_identity'] = [["user1"]]
+        dev[1].connect("test-wpa3-sae-ft", key_mgmt="FT-SAE", scan_freq="2412",
+                       sae_password="0123456789abcdef", sae_password_id="user1")
+    finally:
+        t_events['stop'].set()
+        t.join()
+
+def test_radius_sae_multi_id(dev, apdev):
+    """WPA3 with SAE from RADIUS with multiple SAE password identity for one password"""
+    t, t_events = start_radius_psk_server(psk=["12345678"],
+                                          sae_identity=[["user0","user1"]])
+
+    try:
+        params = hostapd_radius_sae_test_params()
+        hapd = hostapd.add_ap(apdev[0], params)
+        dev[0].connect("test-wpa3-sae", key_mgmt="SAE", scan_freq="2412", 
+                       sae_password="12345678", sae_password_id="user0")
+        dev[0].connect("test-wpa3-sae", key_mgmt="SAE", scan_freq="2412", 
+                       sae_password="12345678", sae_password_id="user1")
+    finally:
+        t_events['stop'].set()
+        t.join()
+
+def test_radius_sae_multi_user(dev, apdev):
+    """WPA3 with SAE from RADIUS with multiple SAE password identity for multiple passwords"""
+    t, t_events = start_radius_psk_server(psk=["12345678","abcdefgh"],
+                                          sae_identity=[["user0"],["user1"]])
+
+    try:
+        params = hostapd_radius_sae_test_params()
+        hapd = hostapd.add_ap(apdev[0], params)
+        dev[0].connect("test-wpa3-sae", key_mgmt="SAE", scan_freq="2412", 
+                       sae_password="12345678", sae_password_id="user0")
+        dev[0].connect("test-wpa3-sae", key_mgmt="SAE", scan_freq="2412", 
+                       sae_password="abcdefgh", sae_password_id="user1")
+    finally:
+        t_events['stop'].set()
+        t.join()
+
