@@ -168,101 +168,108 @@ struct radius_attr_type {
 		RADIUS_ATTR_UNDIST, RADIUS_ATTR_TEXT, RADIUS_ATTR_IP,
 		RADIUS_ATTR_HEXDUMP, RADIUS_ATTR_INT32, RADIUS_ATTR_IPV6
 	} data_type;
+	enum {
+		RADIUS_ATTR_F_TAGGED = BIT(0),
+		RADIUS_ATTR_F_TAGGED_LIM = BIT(1),
+	} flags;
 };
 
 static const struct radius_attr_type radius_attrs[] =
 {
-	{ RADIUS_ATTR_USER_NAME, "User-Name", RADIUS_ATTR_TEXT },
-	{ RADIUS_ATTR_USER_PASSWORD, "User-Password", RADIUS_ATTR_UNDIST },
-	{ RADIUS_ATTR_NAS_IP_ADDRESS, "NAS-IP-Address", RADIUS_ATTR_IP },
-	{ RADIUS_ATTR_NAS_PORT, "NAS-Port", RADIUS_ATTR_INT32 },
-	{ RADIUS_ATTR_SERVICE_TYPE, "Service-Type", RADIUS_ATTR_INT32 },
-	{ RADIUS_ATTR_FRAMED_IP_ADDRESS, "Framed-IP-Address", RADIUS_ATTR_IP },
-	{ RADIUS_ATTR_FRAMED_MTU, "Framed-MTU", RADIUS_ATTR_INT32 },
-	{ RADIUS_ATTR_REPLY_MESSAGE, "Reply-Message", RADIUS_ATTR_TEXT },
-	{ RADIUS_ATTR_STATE, "State", RADIUS_ATTR_UNDIST },
-	{ RADIUS_ATTR_CLASS, "Class", RADIUS_ATTR_UNDIST },
-	{ RADIUS_ATTR_VENDOR_SPECIFIC, "Vendor-Specific", RADIUS_ATTR_UNDIST },
-	{ RADIUS_ATTR_SESSION_TIMEOUT, "Session-Timeout", RADIUS_ATTR_INT32 },
-	{ RADIUS_ATTR_IDLE_TIMEOUT, "Idle-Timeout", RADIUS_ATTR_INT32 },
+	{ RADIUS_ATTR_USER_NAME, "User-Name", RADIUS_ATTR_TEXT, 0},
+	{ RADIUS_ATTR_USER_PASSWORD, "User-Password", RADIUS_ATTR_UNDIST, 0},
+	{ RADIUS_ATTR_NAS_IP_ADDRESS, "NAS-IP-Address", RADIUS_ATTR_IP, 0},
+	{ RADIUS_ATTR_NAS_PORT, "NAS-Port", RADIUS_ATTR_INT32, 0},
+	{ RADIUS_ATTR_SERVICE_TYPE, "Service-Type", RADIUS_ATTR_INT32, 0},
+	{ RADIUS_ATTR_FRAMED_IP_ADDRESS, "Framed-IP-Address", RADIUS_ATTR_IP, 0},
+	{ RADIUS_ATTR_FRAMED_MTU, "Framed-MTU", RADIUS_ATTR_INT32, 0},
+	{ RADIUS_ATTR_REPLY_MESSAGE, "Reply-Message", RADIUS_ATTR_TEXT, 0},
+	{ RADIUS_ATTR_STATE, "State", RADIUS_ATTR_UNDIST, 0},
+	{ RADIUS_ATTR_CLASS, "Class", RADIUS_ATTR_UNDIST, 0},
+	{ RADIUS_ATTR_VENDOR_SPECIFIC, "Vendor-Specific", RADIUS_ATTR_UNDIST, 0},
+	{ RADIUS_ATTR_SESSION_TIMEOUT, "Session-Timeout", RADIUS_ATTR_INT32, 0},
+	{ RADIUS_ATTR_IDLE_TIMEOUT, "Idle-Timeout", RADIUS_ATTR_INT32, 0},
 	{ RADIUS_ATTR_TERMINATION_ACTION, "Termination-Action",
-	  RADIUS_ATTR_INT32 },
+	  RADIUS_ATTR_INT32, 0},
 	{ RADIUS_ATTR_CALLED_STATION_ID, "Called-Station-Id",
-	  RADIUS_ATTR_TEXT },
+	  RADIUS_ATTR_TEXT, 0},
 	{ RADIUS_ATTR_CALLING_STATION_ID, "Calling-Station-Id",
-	  RADIUS_ATTR_TEXT },
-	{ RADIUS_ATTR_NAS_IDENTIFIER, "NAS-Identifier", RADIUS_ATTR_TEXT },
-	{ RADIUS_ATTR_PROXY_STATE, "Proxy-State", RADIUS_ATTR_UNDIST },
+	  RADIUS_ATTR_TEXT, 0},
+	{ RADIUS_ATTR_NAS_IDENTIFIER, "NAS-Identifier", RADIUS_ATTR_TEXT, 0},
+	{ RADIUS_ATTR_PROXY_STATE, "Proxy-State", RADIUS_ATTR_UNDIST, 0},
 	{ RADIUS_ATTR_ACCT_STATUS_TYPE, "Acct-Status-Type",
-	  RADIUS_ATTR_INT32 },
-	{ RADIUS_ATTR_ACCT_DELAY_TIME, "Acct-Delay-Time", RADIUS_ATTR_INT32 },
+	  RADIUS_ATTR_INT32, 0},
+	{ RADIUS_ATTR_ACCT_DELAY_TIME, "Acct-Delay-Time", RADIUS_ATTR_INT32, 0},
 	{ RADIUS_ATTR_ACCT_INPUT_OCTETS, "Acct-Input-Octets",
-	  RADIUS_ATTR_INT32 },
+	  RADIUS_ATTR_INT32, 0},
 	{ RADIUS_ATTR_ACCT_OUTPUT_OCTETS, "Acct-Output-Octets",
-	  RADIUS_ATTR_INT32 },
-	{ RADIUS_ATTR_ACCT_SESSION_ID, "Acct-Session-Id", RADIUS_ATTR_TEXT },
-	{ RADIUS_ATTR_ACCT_AUTHENTIC, "Acct-Authentic", RADIUS_ATTR_INT32 },
+	  RADIUS_ATTR_INT32, 0},
+	{ RADIUS_ATTR_ACCT_SESSION_ID, "Acct-Session-Id", RADIUS_ATTR_TEXT, 0},
+	{ RADIUS_ATTR_ACCT_AUTHENTIC, "Acct-Authentic", RADIUS_ATTR_INT32, 0},
 	{ RADIUS_ATTR_ACCT_SESSION_TIME, "Acct-Session-Time",
-	  RADIUS_ATTR_INT32 },
+	  RADIUS_ATTR_INT32, 0},
 	{ RADIUS_ATTR_ACCT_INPUT_PACKETS, "Acct-Input-Packets",
-	  RADIUS_ATTR_INT32 },
+	  RADIUS_ATTR_INT32, 0},
 	{ RADIUS_ATTR_ACCT_OUTPUT_PACKETS, "Acct-Output-Packets",
-	  RADIUS_ATTR_INT32 },
+	  RADIUS_ATTR_INT32, 0},
 	{ RADIUS_ATTR_ACCT_TERMINATE_CAUSE, "Acct-Terminate-Cause",
-	  RADIUS_ATTR_INT32 },
+	  RADIUS_ATTR_INT32, 0},
 	{ RADIUS_ATTR_ACCT_MULTI_SESSION_ID, "Acct-Multi-Session-Id",
-	  RADIUS_ATTR_TEXT },
-	{ RADIUS_ATTR_ACCT_LINK_COUNT, "Acct-Link-Count", RADIUS_ATTR_INT32 },
+	  RADIUS_ATTR_TEXT, 0},
+	{ RADIUS_ATTR_ACCT_LINK_COUNT, "Acct-Link-Count", RADIUS_ATTR_INT32, 0},
 	{ RADIUS_ATTR_ACCT_INPUT_GIGAWORDS, "Acct-Input-Gigawords",
-	  RADIUS_ATTR_INT32 },
+	  RADIUS_ATTR_INT32, 0},
 	{ RADIUS_ATTR_ACCT_OUTPUT_GIGAWORDS, "Acct-Output-Gigawords",
-	  RADIUS_ATTR_INT32 },
+	  RADIUS_ATTR_INT32, 0},
 	{ RADIUS_ATTR_EVENT_TIMESTAMP, "Event-Timestamp",
-	  RADIUS_ATTR_INT32 },
-	{ RADIUS_ATTR_EGRESS_VLANID, "EGRESS-VLANID", RADIUS_ATTR_HEXDUMP },
-	{ RADIUS_ATTR_NAS_PORT_TYPE, "NAS-Port-Type", RADIUS_ATTR_INT32 },
-	{ RADIUS_ATTR_TUNNEL_TYPE, "Tunnel-Type", RADIUS_ATTR_HEXDUMP },
+	  RADIUS_ATTR_INT32, 0},
+	{ RADIUS_ATTR_EGRESS_VLANID, "EGRESS-VLANID", RADIUS_ATTR_HEXDUMP, 0},
+	{ RADIUS_ATTR_NAS_PORT_TYPE, "NAS-Port-Type", RADIUS_ATTR_INT32, 0},
+	{ RADIUS_ATTR_TUNNEL_TYPE, "Tunnel-Type", RADIUS_ATTR_HEXDUMP,
+	  RADIUS_ATTR_F_TAGGED},
 	{ RADIUS_ATTR_TUNNEL_MEDIUM_TYPE, "Tunnel-Medium-Type",
-	  RADIUS_ATTR_HEXDUMP },
+	  RADIUS_ATTR_HEXDUMP, RADIUS_ATTR_F_TAGGED},
 	{ RADIUS_ATTR_TUNNEL_PASSWORD, "Tunnel-Password",
-	  RADIUS_ATTR_UNDIST },
-	{ RADIUS_ATTR_CONNECT_INFO, "Connect-Info", RADIUS_ATTR_TEXT },
-	{ RADIUS_ATTR_EAP_MESSAGE, "EAP-Message", RADIUS_ATTR_UNDIST },
+	  RADIUS_ATTR_UNDIST, RADIUS_ATTR_F_TAGGED},
+	{ RADIUS_ATTR_CONNECT_INFO, "Connect-Info", RADIUS_ATTR_TEXT, 0},
+	{ RADIUS_ATTR_EAP_MESSAGE, "EAP-Message", RADIUS_ATTR_UNDIST, 0},
 	{ RADIUS_ATTR_MESSAGE_AUTHENTICATOR, "Message-Authenticator",
-	  RADIUS_ATTR_UNDIST },
+	  RADIUS_ATTR_UNDIST, 0},
 	{ RADIUS_ATTR_TUNNEL_PRIVATE_GROUP_ID, "Tunnel-Private-Group-Id",
-	  RADIUS_ATTR_HEXDUMP },
+	  RADIUS_ATTR_HEXDUMP, RADIUS_ATTR_F_TAGGED_LIM },
 	{ RADIUS_ATTR_ACCT_INTERIM_INTERVAL, "Acct-Interim-Interval",
-	  RADIUS_ATTR_INT32 },
+	  RADIUS_ATTR_INT32, 0},
 	{ RADIUS_ATTR_CHARGEABLE_USER_IDENTITY, "Chargeable-User-Identity",
-	  RADIUS_ATTR_TEXT },
-	{ RADIUS_ATTR_NAS_IPV6_ADDRESS, "NAS-IPv6-Address", RADIUS_ATTR_IPV6 },
-	{ RADIUS_ATTR_ERROR_CAUSE, "Error-Cause", RADIUS_ATTR_INT32 },
-	{ RADIUS_ATTR_EAP_KEY_NAME, "EAP-Key-Name", RADIUS_ATTR_HEXDUMP },
-	{ RADIUS_ATTR_OPERATOR_NAME, "Operator-Name", RADIUS_ATTR_TEXT },
+	  RADIUS_ATTR_TEXT, 0},
+	{ RADIUS_ATTR_TUNNEL_CLIENT_AUTH_ID, "Tunnel-Client-Auth-ID",
+	  RADIUS_ATTR_TEXT, RADIUS_ATTR_F_TAGGED},
+	{ RADIUS_ATTR_NAS_IPV6_ADDRESS, "NAS-IPv6-Address", RADIUS_ATTR_IPV6, 0},
+	{ RADIUS_ATTR_ERROR_CAUSE, "Error-Cause", RADIUS_ATTR_INT32, 0},
+	{ RADIUS_ATTR_EAP_KEY_NAME, "EAP-Key-Name", RADIUS_ATTR_HEXDUMP, 0},
+	{ RADIUS_ATTR_OPERATOR_NAME, "Operator-Name", RADIUS_ATTR_TEXT, 0},
 	{ RADIUS_ATTR_LOCATION_INFO, "Location-Information",
-	  RADIUS_ATTR_HEXDUMP },
-	{ RADIUS_ATTR_LOCATION_DATA, "Location-Data", RADIUS_ATTR_HEXDUMP },
+	  RADIUS_ATTR_HEXDUMP, 0},
+	{ RADIUS_ATTR_LOCATION_DATA, "Location-Data", RADIUS_ATTR_HEXDUMP, 0},
 	{ RADIUS_ATTR_BASIC_LOCATION_POLICY_RULES,
-	  "Basic-Location-Policy-Rules", RADIUS_ATTR_HEXDUMP },
+	  "Basic-Location-Policy-Rules", RADIUS_ATTR_HEXDUMP, 0},
 	{ RADIUS_ATTR_EXTENDED_LOCATION_POLICY_RULES,
-	  "Extended-Location-Policy-Rules", RADIUS_ATTR_HEXDUMP },
-	{ RADIUS_ATTR_LOCATION_CAPABLE, "Location-Capable", RADIUS_ATTR_INT32 },
+	  "Extended-Location-Policy-Rules", RADIUS_ATTR_HEXDUMP, 0},
+	{ RADIUS_ATTR_LOCATION_CAPABLE, "Location-Capable", RADIUS_ATTR_INT32, 0},
 	{ RADIUS_ATTR_REQUESTED_LOCATION_INFO, "Requested-Location-Info",
-	  RADIUS_ATTR_INT32 },
+	  RADIUS_ATTR_INT32, 0},
 	{ RADIUS_ATTR_MOBILITY_DOMAIN_ID, "Mobility-Domain-Id",
-	  RADIUS_ATTR_INT32 },
-	{ RADIUS_ATTR_WLAN_HESSID, "WLAN-HESSID", RADIUS_ATTR_TEXT },
+	  RADIUS_ATTR_INT32, 0},
+	{ RADIUS_ATTR_WLAN_HESSID, "WLAN-HESSID", RADIUS_ATTR_TEXT, 0},
 	{ RADIUS_ATTR_WLAN_REASON_CODE, "WLAN-Reason-Code",
-	  RADIUS_ATTR_INT32 },
+	  RADIUS_ATTR_INT32, 0},
 	{ RADIUS_ATTR_WLAN_PAIRWISE_CIPHER, "WLAN-Pairwise-Cipher",
-	  RADIUS_ATTR_HEXDUMP },
+	  RADIUS_ATTR_HEXDUMP, 0},
 	{ RADIUS_ATTR_WLAN_GROUP_CIPHER, "WLAN-Group-Cipher",
-	  RADIUS_ATTR_HEXDUMP },
+	  RADIUS_ATTR_HEXDUMP, 0},
 	{ RADIUS_ATTR_WLAN_AKM_SUITE, "WLAN-AKM-Suite",
-	  RADIUS_ATTR_HEXDUMP },
+	  RADIUS_ATTR_HEXDUMP, 0},
 	{ RADIUS_ATTR_WLAN_GROUP_MGMT_CIPHER, "WLAN-Group-Mgmt-Pairwise-Cipher",
-	  RADIUS_ATTR_HEXDUMP },
+	  RADIUS_ATTR_HEXDUMP, 0},
 };
 #define RADIUS_ATTRS ARRAY_SIZE(radius_attrs)
 
@@ -297,6 +304,18 @@ static void radius_msg_dump_attr(struct radius_attr_hdr *hdr)
 
 	len = hdr->length - sizeof(struct radius_attr_hdr);
 	pos = (unsigned char *) (hdr + 1);
+
+	if (len > 0 && (attr->flags & RADIUS_ATTR_F_TAGGED)) {
+		wpa_printf(MSG_INFO, "      Tag: %u", pos[0]);
+		pos++;
+		len--;
+	}
+	if (len > 0 && (attr->flags & RADIUS_ATTR_F_TAGGED_LIM) &&
+	    pos[0] <= 0x1F) {
+		wpa_printf(MSG_INFO, "      Tag: %u", pos[0]);
+		pos++;
+		len--;
+	}
 
 	switch (attr->data_type) {
 	case RADIUS_ATTR_TEXT:
@@ -1453,6 +1472,39 @@ int radius_msg_get_attr(struct radius_msg *msg, u8 type, u8 *buf, size_t len)
 }
 
 
+int radius_msg_get_attr_tag_ptr(struct radius_msg *msg, u8 type, u8 tag,
+				u8 **buf, size_t *len, size_t idx,
+				size_t *next_idx)
+{
+	size_t i;
+	struct radius_attr_hdr *attr;
+
+	for (i = idx; i < msg->attr_used; i++) {
+		attr = radius_get_attr_hdr(msg, i);
+		if (attr->type != type ||
+		    attr->length <= sizeof(*attr))
+			continue;
+
+		*buf = (u8 *) (attr + 1);
+		*len = attr->length - sizeof(*attr) - 1;
+
+		if (*buf[0] != tag)
+			continue;
+
+		(*buf)++; // skip tag from output
+		if (next_idx)
+			*next_idx = i + 1;
+
+		return 0;
+	}
+
+	*buf = NULL;
+	*len = 0;
+
+	return -1;
+}
+
+
 int radius_msg_get_attr_ptr(struct radius_msg *msg, u8 type, u8 **buf,
 			    size_t *len, const u8 *start)
 {
@@ -1628,7 +1680,8 @@ int radius_msg_get_vlanid(struct radius_msg *msg, int *untagged, int numtagged,
  */
 char * radius_msg_get_tunnel_password(struct radius_msg *msg, int *keylen,
 				      const u8 *secret, size_t secret_len,
-				      struct radius_msg *sent_msg, size_t n)
+				      struct radius_msg *sent_msg, size_t idx,
+				      u8 *out_tag, size_t *next_idx)
 {
 	u8 *buf = NULL;
 	size_t buflen;
@@ -1638,7 +1691,7 @@ char * radius_msg_get_tunnel_password(struct radius_msg *msg, int *keylen,
 	size_t len[3];
 	u8 hash[16];
 	u8 *pos;
-	size_t i, j = 0;
+	size_t i;
 	struct radius_attr_hdr *attr;
 	const u8 *data;
 	size_t dlen;
@@ -1647,7 +1700,7 @@ char * radius_msg_get_tunnel_password(struct radius_msg *msg, int *keylen,
 	char *ret = NULL;
 
 	/* find n-th valid Tunnel-Password attribute */
-	for (i = 0; i < msg->attr_used; i++) {
+	for (i = idx; i < msg->attr_used; i++) {
 		attr = radius_get_attr_hdr(msg, i);
 		if (attr == NULL ||
 		    attr->type != RADIUS_ATTR_TUNNEL_PASSWORD) {
@@ -1659,9 +1712,8 @@ char * radius_msg_get_tunnel_password(struct radius_msg *msg, int *keylen,
 		dlen = attr->length - sizeof(*attr);
 		if (dlen <= 3 || dlen % 16 != 3)
 			continue;
-		j++;
-		if (j <= n)
-			continue;
+		if (next_idx)
+			*next_idx = i + 1;
 
 		fdata = data;
 		fdlen = dlen;
@@ -1677,6 +1729,8 @@ char * radius_msg_get_tunnel_password(struct radius_msg *msg, int *keylen,
 	buflen = fdlen;
 
 	/* init pointers */
+	if (out_tag)
+		*out_tag = *buf;
 	salt = buf + 1;
 	str = buf + 3;
 

@@ -1589,6 +1589,11 @@ int hostapd_sae_pw_id_in_use(struct hostapd_bss_config *conf)
 	if (conf->ssid.wpa_passphrase)
 		without_id = 1;
 
+	if (conf->wpa_psk_radius != PSK_RADIUS_IGNORED) {
+		with_id = 1;
+		without_id = 1;
+	}
+
 	for (pw = conf->sae_passwords; pw; pw = pw->next) {
 		if (pw->identifier)
 			with_id = 1;
@@ -1626,6 +1631,9 @@ bool hostapd_sae_pk_exclusively(struct hostapd_bss_config *conf)
 	struct sae_password_entry *pw;
 
 	if (conf->ssid.wpa_passphrase)
+		return false;
+
+	if (conf->wpa_psk_radius != PSK_RADIUS_IGNORED)
 		return false;
 
 	for (pw = conf->sae_passwords; pw; pw = pw->next) {

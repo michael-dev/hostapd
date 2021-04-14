@@ -156,9 +156,12 @@ struct hostapd_vlan {
 #define MAX_PASSPHRASE_LEN 63
 struct hostapd_sta_wpa_psk_short {
 	struct hostapd_sta_wpa_psk_short *next;
-	unsigned int is_passphrase:1;
-	u8 psk[PMK_LEN];
-	char passphrase[MAX_PASSPHRASE_LEN + 1];
+	u8 *psk;
+	char *passphrase;
+#ifdef CONFIG_SAE
+	char *sae_identifier;
+	struct sae_pt *sae_pt;
+#endif /* CONFIG_SAE */
 	int ref; /* (number of references held) - 1 */
 };
 
