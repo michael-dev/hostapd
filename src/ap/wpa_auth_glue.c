@@ -386,23 +386,35 @@ static const u8 * hostapd_wpa_auth_get_psk(void *ctx, const u8 *addr,
 	 * logic list (all hostapd_get_psk; all sta->psk)
 	 */
 	if (sta && sta->psk && !psk) {
-		struct hostapd_sta_wpa_psk_short *pos;
+		struct hostapd_sta_wpa_psk_short *pos, *prev = NULL;
 
 		if (vlan_id)
 			*vlan_id = 0;
-		psk = sta->psk->psk;
+
 		for (pos = sta->psk; pos; pos = pos->next) {
-			if (pos->is_passphrase) {
+			if (pos->passphrase && !pos->psk) {
+				if (prev && prev->psk && prev->passphrase &&
+				    !os_strcmp(pos->passphrase, prev->passphrase))
+					continue;
+
+				pos->psk = os_zalloc(PMK_LEN);
+				if (!pos->psk)
+					continue;
+
 				pbkdf2_sha1(pos->passphrase,
 					    hapd->conf->ssid.ssid,
 					    hapd->conf->ssid.ssid_len, 4096,
 					    pos->psk, PMK_LEN);
-				pos->is_passphrase = 0;
+			} else if (!pos->psk)
+				continue;
+
+			if (prev_psk && (!prev || prev->psk != prev_psk)) {
+				prev = pos;
+				continue;
 			}
-			if (pos->psk == prev_psk) {
-				psk = pos->next ? pos->next->psk : NULL;
-				break;
-			}
+
+			psk = pos->psk;
+			break;
 		}
 	}
 	return psk;

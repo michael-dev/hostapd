@@ -92,6 +92,7 @@ enum { RADIUS_ATTR_USER_NAME = 1,
        RADIUS_ATTR_TUNNEL_PRIVATE_GROUP_ID = 81,
        RADIUS_ATTR_ACCT_INTERIM_INTERVAL = 85,
        RADIUS_ATTR_CHARGEABLE_USER_IDENTITY = 89,
+       RADIUS_ATTR_TUNNEL_CLIENT_AUTH_ID = 90,
        RADIUS_ATTR_NAS_IPV6_ADDRESS = 95,
        RADIUS_ATTR_ERROR_CAUSE = 101,
        RADIUS_ATTR_EAP_KEY_NAME = 102,
@@ -320,7 +321,8 @@ int radius_msg_get_vlanid(struct radius_msg *msg, int *untagged, int numtagged,
 			  int *tagged);
 char * radius_msg_get_tunnel_password(struct radius_msg *msg, int *keylen,
 				      const u8 *secret, size_t secret_len,
-				      struct radius_msg *sent_msg, size_t n);
+				      struct radius_msg *sent_msg, size_t idx,
+				      u8 *out_tag, size_t *next_idx);
 
 static inline int radius_msg_add_attr_int32(struct radius_msg *msg, u8 type,
 					    u32 value)
@@ -344,6 +346,9 @@ static inline int radius_msg_get_attr_int32(struct radius_msg *msg, u8 type,
 int radius_msg_get_attr_ptr(struct radius_msg *msg, u8 type, u8 **buf,
 			    size_t *len, const u8 *start);
 int radius_msg_count_attr(struct radius_msg *msg, u8 type, int min_len);
+int radius_msg_get_attr_tag_ptr(struct radius_msg *msg, u8 type, u8 tag,
+				u8 **buf, size_t *len, size_t idx,
+				size_t *next_idx);
 
 
 struct radius_attr_data {

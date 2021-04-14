@@ -487,6 +487,56 @@ static void sae_set_state(struct sta_info *sta, enum sae_state state,
 }
 
 
+static void sae_derive_pt_from_psk(struct hostapd_data *hapd,
+				   struct hostapd_sta_wpa_psk_short *psk)
+{
+	struct hostapd_ssid *ssid;
+
+	if (!psk->passphrase)
+		return;
+	if (psk->sae_pt)
+		return;
+
+	ssid = &hapd->conf->ssid;
+
+	psk->sae_pt = sae_derive_pt(hapd->conf->sae_groups, ssid->ssid,
+				    ssid->ssid_len, (u8 *) psk->passphrase,
+				    os_strlen(psk->passphrase),
+				    psk->sae_identifier);
+
+}
+
+
+static const char * sae_get_password_from_psk(struct hostapd_data *hapd,
+					      struct sta_info *sta,
+					      const char *rx_id,
+					      struct sae_pt **s_pt)
+{
+	struct hostapd_sta_wpa_psk_short *pos;
+
+	for (pos = sta->psk; pos; pos = pos->next) {
+		if ((rx_id && !pos->sae_identifier) ||
+		    (!rx_id && pos->sae_identifier))
+			continue;
+		if (rx_id && pos->sae_identifier &&
+		    os_strcmp(rx_id, pos->sae_identifier) != 0)
+			continue;
+
+		sae_derive_pt_from_psk(hapd, pos);
+
+		if (!pos->sae_pt)
+			continue;
+
+		if (s_pt)
+			*s_pt = pos->sae_pt;
+
+		return pos->passphrase;
+	}
+
+	return NULL;
+}
+
+
 static const char * sae_get_password(struct hostapd_data *hapd,
 				     struct sta_info *sta,
 				     const char *rx_id,
@@ -514,6 +564,10 @@ static const char * sae_get_password(struct hostapd_data *hapd,
 			pk = pw->pk;
 		break;
 	}
+
+	if (!password)
+		password = sae_get_password_from_psk(hapd, sta, rx_id, &pt);
+
 	if (!password) {
 		password = hapd->conf->ssid.wpa_passphrase;
 		pt = hapd->conf->ssid.pt;

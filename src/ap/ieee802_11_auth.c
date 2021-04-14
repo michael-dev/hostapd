@@ -23,6 +23,7 @@
 #include "ieee802_11.h"
 #include "ieee802_1x.h"
 #include "ieee802_11_auth.h"
+#include "common/sae.h"
 
 #define RADIUS_ACL_TIMEOUT 600
 
@@ -375,6 +376,112 @@ void hostapd_acl_expire(struct hostapd_data *hapd)
 	hostapd_acl_expire_queries(hapd, &now);
 }
 
+#ifdef CONFIG_SAE
+static int get_tunnel_sae_id(struct radius_msg *msg, u8 tag, u8** buf,
+			      size_t *len, size_t idx, size_t *next_idx)
+{
+	const u8 type = RADIUS_ATTR_TUNNEL_CLIENT_AUTH_ID;
+
+	return radius_msg_get_attr_tag_ptr(msg, type, tag, buf, len, idx,
+					   next_idx);
+}
+#endif /* CONFIG_SAE */
+
+
+static void decode_tunnel_password(struct hostapd_data *hapd,
+				   const u8 *shared_secret,
+				   size_t shared_secret_len,
+				   struct radius_msg *msg,
+				   struct radius_msg *req,
+				   struct hostapd_cached_radius_acl *cache,
+				   size_t psk_idx, size_t *psk_next)
+{
+	int passphraselen;
+	char *passphrase;
+	struct hostapd_sta_wpa_psk_short *psk;
+	int has_sae_id = 0;
+	u8 tag;
+#ifdef CONFIG_SAE
+	u8 *sae_id;
+	size_t sae_id_len;
+	size_t sae_idx = 0, sae_idx_next;
+#endif /* CONFIG_SAE */
+
+	passphrase = radius_msg_get_tunnel_password(
+		msg, &passphraselen, shared_secret, shared_secret_len,
+		req, psk_idx, &tag, psk_next);
+	/*
+	 * Passphrase is NULL iff there is no i-th Tunnel-Password
+	 * attribute in msg.
+	 */
+	if (passphrase == NULL) {
+		*psk_next = 0;
+		return;
+	}
+
+	/*
+	 * Passphase should be 8..63 chars (to be hashed with SSID)
+	 * or 64 chars hex string (no separate hashing with SSID).
+	 */
+
+	if (passphraselen < MIN_PASSPHRASE_LEN ||
+	    passphraselen > MAX_PASSPHRASE_LEN + 1)
+		goto free_pass;
+
+	do {
+		/*
+		 * passphrase does not contain the NULL termination.
+		 * Add it here as pbkdf2_sha1() requires it.
+		 */
+		psk = os_zalloc(sizeof(struct hostapd_sta_wpa_psk_short));
+		if (!psk)
+			goto skip;
+		if (passphraselen == MAX_PASSPHRASE_LEN + 1) {
+			psk->psk = os_zalloc(PMK_LEN);
+			if (!psk->psk)
+				goto skip;
+			if (hexstr2bin(passphrase, psk->psk, PMK_LEN) < 0) {
+				hostapd_logger(hapd, cache->addr,
+					       HOSTAPD_MODULE_RADIUS,
+					       HOSTAPD_LEVEL_WARNING,
+					       "invalid hex string (%d chars) in Tunnel-Password",
+					       passphraselen);
+				goto skip;
+			}
+		} else {
+			psk->passphrase = os_zalloc(passphraselen + 1);
+			os_memcpy(psk->passphrase, passphrase, passphraselen);
+#ifdef CONFIG_SAE
+			/*
+			 * Lookup Tunnel-Client-Auth-ID by tag
+			 */
+			has_sae_id = !get_tunnel_sae_id(msg, tag, &sae_id,
+							&sae_id_len, sae_idx,
+							&sae_idx_next);
+			if (has_sae_id) {
+				psk->sae_identifier = os_zalloc(sae_id_len+1);
+				if (!psk->sae_identifier)
+					goto skip;
+				os_memcpy(psk->sae_identifier, sae_id, sae_id_len);
+				sae_idx = sae_idx_next;
+			} else if (sae_idx > 0)
+				goto skip;
+#endif /* CONFIG_SAE */
+		}
+		psk->next = cache->info.psk;
+		cache->info.psk = psk;
+		psk = NULL;
+	} while (has_sae_id);
+
+skip:
+	if (psk) {
+		os_free(psk->psk);
+		os_free(psk->passphrase);
+		os_free(psk);
+	}
+free_pass:
+	os_free(passphrase);
+}
 
 static void decode_tunnel_passwords(struct hostapd_data *hapd,
 				    const u8 *shared_secret,
@@ -383,64 +490,19 @@ static void decode_tunnel_passwords(struct hostapd_data *hapd,
 				    struct radius_msg *req,
 				    struct hostapd_cached_radius_acl *cache)
 {
-	int passphraselen;
-	char *passphrase;
-	size_t i;
-	struct hostapd_sta_wpa_psk_short *psk;
+	size_t psk_idx = 0, psk_next;
 
 	/*
 	 * Decode all tunnel passwords as PSK and save them into a linked list.
 	 */
-	for (i = 0; ; i++) {
-		passphrase = radius_msg_get_tunnel_password(
-			msg, &passphraselen, shared_secret, shared_secret_len,
-			req, i);
-		/*
-		 * Passphrase is NULL iff there is no i-th Tunnel-Password
-		 * attribute in msg.
-		 */
-		if (passphrase == NULL)
+	while (1) {
+		decode_tunnel_password(hapd, shared_secret, shared_secret_len,
+				       msg, req, cache, psk_idx, &psk_next);
+		if (psk_next == 0)
 			break;
-
-		/*
-		 * Passphase should be 8..63 chars (to be hashed with SSID)
-		 * or 64 chars hex string (no separate hashing with SSID).
-		 */
-
-		if (passphraselen < MIN_PASSPHRASE_LEN ||
-		    passphraselen > MAX_PASSPHRASE_LEN + 1)
-			goto free_pass;
-
-		/*
-		 * passphrase does not contain the NULL termination.
-		 * Add it here as pbkdf2_sha1() requires it.
-		 */
-		psk = os_zalloc(sizeof(struct hostapd_sta_wpa_psk_short));
-		if (psk) {
-			if ((passphraselen == MAX_PASSPHRASE_LEN + 1) &&
-			    (hexstr2bin(passphrase, psk->psk, PMK_LEN) < 0)) {
-				hostapd_logger(hapd, cache->addr,
-					       HOSTAPD_MODULE_RADIUS,
-					       HOSTAPD_LEVEL_WARNING,
-					       "invalid hex string (%d chars) in Tunnel-Password",
-					       passphraselen);
-				goto skip;
-			} else if (passphraselen <= MAX_PASSPHRASE_LEN) {
-				os_memcpy(psk->passphrase, passphrase,
-					  passphraselen);
-				psk->is_passphrase = 1;
-			}
-			psk->next = cache->info.psk;
-			cache->info.psk = psk;
-			psk = NULL;
-		}
-skip:
-		os_free(psk);
-free_pass:
-		os_free(passphrase);
+		psk_idx = psk_next;
 	}
 }
-
 
 /**
  * hostapd_acl_recv_radius - Process incoming RADIUS Authentication messages
@@ -646,6 +708,13 @@ void hostapd_free_psk_list(struct hostapd_sta_wpa_psk_short *psk)
 	while (psk) {
 		struct hostapd_sta_wpa_psk_short *prev = psk;
 		psk = psk->next;
+#ifdef CONFIG_SAE
+		if (prev->sae_pt)
+			sae_deinit_pt(prev->sae_pt);
+		os_free(prev->sae_identifier);
+		os_free(prev->psk);
+		os_free(prev->passphrase);
+#endif /* CONFIG_SAE */
 		os_free(prev);
 	}
 }
