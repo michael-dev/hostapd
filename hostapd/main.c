@@ -323,6 +323,14 @@ static void handle_reload(int sig, void *signal_ctx)
 	hostapd_for_each_interface(interfaces, handle_reload_iface, NULL);
 }
 
+/**
+ * handle_sigpipe - SIGPIPE handler to ignore SIGPIPE errors.
+ */
+static void handle_sigpipe(int unused,void *signal_ctx)
+{
+	wpa_printf(MSG_DEBUG, "Signal SIGPIPE received - ignoring");
+}
+
 
 static void handle_dump_state(int sig, void *signal_ctx)
 {
@@ -356,6 +364,7 @@ static int hostapd_global_init(struct hapd_interfaces *interfaces,
 #ifndef CONFIG_NATIVE_WINDOWS
 	eloop_register_signal(SIGHUP, handle_reload, interfaces);
 	eloop_register_signal(SIGUSR1, handle_dump_state, interfaces);
+	eloop_register_signal(SIGPIPE, handle_sigpipe, interfaces);
 #endif /* CONFIG_NATIVE_WINDOWS */
 	eloop_register_signal_terminate(handle_term, interfaces);
 
